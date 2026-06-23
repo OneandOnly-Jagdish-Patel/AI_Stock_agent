@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from alpaca.data.enums import MarketType
+from alpaca.data.enums import MarketType, MostActivesBy
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.historical.screener import ScreenerClient
 from alpaca.data.requests import MarketMoversRequest, MostActivesRequest, StockBarsRequest
@@ -37,7 +37,7 @@ def fetch_from_alpaca_screener(config: AppConfig) -> list[Candidate]:
     top = config.screener.candidate_pool_size
 
     try:
-        actives = client.get_most_actives(MostActivesRequest(top=top))
+        actives = client.get_most_actives(MostActivesRequest(top=top, by=MostActivesBy.VOLUME))
         for stock in actives.most_actives:
             candidates[stock.symbol] = Candidate(
                 symbol=stock.symbol,

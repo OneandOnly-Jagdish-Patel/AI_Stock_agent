@@ -60,9 +60,14 @@ class GoogleClient:
             "generationConfig": {
                 "temperature": 0.1,
                 "responseMimeType": "application/json",
+                "thinkingConfig": {"thinkingLevel": "MINIMAL"},
             },
         }
-        timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
+        timeout = aiohttp.ClientTimeout(
+            total=None,
+            connect=15,
+            sock_read=self.config.timeout_seconds,
+        )
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 url,
@@ -146,15 +151,38 @@ class GoogleClient:
             logger.warning("Google premarket_briefing failed: %s: %s", type(e).__name__, e or "(no message)")
             return None
 
+    @staticmethod
+    def _trim_screener_context(context: dict) -> dict:
+        trimmed: list[dict] = []
+        for c in context.get("candidates", []):
+            row = dict(c)
+            headline = row.get("headline")
+            if isinstance(headline, str) and len(headline) > 120:
+                row["headline"] = headline[:117] + "..."
+            trimmed.append(row)
+        return {**context, "candidates": trimmed}
+
     async def screener_rank(self, context: dict) -> ScreenerRanking | None:
+        trimmed = self._trim_screener_context(context)
         prompt = SCREENER_RANK_PROMPT.format(
-            slots=context.get("slots", 3),
-            candidates=json.dumps(context.get("candidates", []), indent=2),
+            slots=trimmed.get("slots", 3),
+            candidates=json.dumps(trimmed.get("candidates", []), indent=2),
         )
-        try:
-            raw = await self._generate(prompt)
-            parsed = OllamaClient._extract_json(raw)
-            return ScreenerRanking.model_validate(parsed)
-        except Exception as e:
-            logger.warning("Google screener_rank failed: %s: %s", type(e).__name__, e or "(no message)")
-            return None
+        for attempt in range(2):
+            try:
+                raw = await self._generate(prompt)
+                parsed = OllamaClient._extract_json(raw)
+                return ScreenerRanking.model_validate(parsed)
+            except (asyncio.TimeoutError, TimeoutError) as e:
+                logger.warning(
+                    "Google screener_rank attempt %d timed out after %ss",
+                    attempt + 1,
+                    self.config.timeout_seconds,
+                )
+                if attempt == 0:
+                    continue
+                return None
+            except Exception as e:
+                logger.warning("Google screener_rank failed: %s: %s", type(e).__name__, e or "(no message)")
+                return None
+        return None

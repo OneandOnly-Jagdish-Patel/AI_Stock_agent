@@ -9,6 +9,7 @@ from alpaca.data.historical.news import NewsClient
 from alpaca.data.requests import NewsRequest
 
 from src.config import AppConfig
+from src.data.news_parse import article_to_headline_fields, extract_news_articles
 from src.llm.ollama_client import PremarketBriefing
 from src.llm.router import LLMRouter
 
@@ -36,16 +37,8 @@ def _fetch_news(config: AppConfig, symbols: list[str]) -> list[dict]:
         return []
 
     items: list[dict] = []
-    news_list = result.news if hasattr(result, "news") else result
-    for article in news_list:
-        items.append(
-            {
-                "symbols": list(article.symbols) if article.symbols else [],
-                "headline": article.headline,
-                "source": article.source,
-                "created_at": str(article.created_at),
-            }
-        )
+    for article in extract_news_articles(result):
+        items.append(article_to_headline_fields(article))
     return items
 
 

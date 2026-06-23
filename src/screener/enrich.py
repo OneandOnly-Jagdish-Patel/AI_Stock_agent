@@ -12,6 +12,7 @@ from alpaca.data.timeframe import TimeFrame
 
 from src.config import AppConfig
 from src.data.bars import _parse_feed
+from src.data.news_parse import article_headline, article_symbols, extract_news_articles
 from src.screener.fetch import Candidate
 
 logger = logging.getLogger(__name__)
@@ -73,11 +74,10 @@ def enrich_candidates(candidates: list[Candidate], config: AppConfig) -> list[di
                 include_content=False,
             )
         )
-        news_list = news.news if hasattr(news, "news") else news
-        for article in news_list:
-            for sym in article.symbols or []:
+        for article in extract_news_articles(news):
+            for sym in article_symbols(article):
                 if sym not in headlines:
-                    headlines[sym] = article.headline
+                    headlines[sym] = article_headline(article)
     except Exception:
         logger.debug("News enrich skipped", exc_info=True)
 

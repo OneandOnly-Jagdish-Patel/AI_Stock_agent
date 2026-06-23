@@ -26,6 +26,9 @@ from src.risk.manager import RiskManager
 from src.screener.daily import build_daily_watchlist
 from src.strategy.scalper import SymbolScalper
 
+_log_dir = Path(__file__).resolve().parent.parent / "logs"
+_log_dir.mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

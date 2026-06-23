@@ -83,10 +83,28 @@ class GoogleClient:
         candidates = data.get("candidates") or []
         if not candidates:
             raise ValueError("Google API returned no candidates")
-        parts = candidates[0].get("content", {}).get("parts") or []
+        return self._extract_response_text(candidates[0])
+
+    @staticmethod
+    def _extract_response_text(candidate: dict) -> str:
+        """Return model output, skipping Gemma 4 internal thought parts."""
+        parts = candidate.get("content", {}).get("parts") or []
         if not parts:
             raise ValueError("Google API returned empty content")
-        return parts[0].get("text", "")
+
+        for part in reversed(parts):
+            if part.get("thought"):
+                continue
+            text = part.get("text", "")
+            if text:
+                return text
+
+        for part in reversed(parts):
+            text = part.get("text", "")
+            if text:
+                return text
+
+        raise ValueError("Google API returned empty content")
 
     async def trade_veto(self, context: dict) -> TradeVetoDecision | None:
         prompt = TRADE_VETO_PROMPT.format(context=json.dumps(context, indent=2))
@@ -96,7 +114,12 @@ class GoogleClient:
                 parsed = OllamaClient._extract_json(raw)
                 return TradeVetoDecision.model_validate(parsed)
             except Exception as e:
-                logger.warning("Google trade_veto attempt %d failed: %s", attempt + 1, e)
+                logger.warning(
+                    "Google trade_veto attempt %d failed: %s: %s",
+                    attempt + 1,
+                    type(e).__name__,
+                    e or "(no message)",
+                )
         return None
 
     async def rank_watchlist(self, context: dict) -> WatchlistRanking | None:
@@ -106,7 +129,7 @@ class GoogleClient:
             parsed = OllamaClient._extract_json(raw)
             return WatchlistRanking.model_validate(parsed)
         except Exception as e:
-            logger.warning("Google rank_watchlist failed: %s", e)
+            logger.warning("Google rank_watchlist failed: %s: %s", type(e).__name__, e or "(no message)")
             return None
 
     async def premarket_briefing(self, context: dict) -> PremarketBriefing | None:
@@ -120,7 +143,7 @@ class GoogleClient:
             parsed = OllamaClient._extract_json(raw)
             return PremarketBriefing.model_validate(parsed)
         except Exception as e:
-            logger.warning("Google premarket_briefing failed: %s", e)
+            logger.warning("Google premarket_briefing failed: %s: %s", type(e).__name__, e or "(no message)")
             return None
 
     async def screener_rank(self, context: dict) -> ScreenerRanking | None:
@@ -133,5 +156,5 @@ class GoogleClient:
             parsed = OllamaClient._extract_json(raw)
             return ScreenerRanking.model_validate(parsed)
         except Exception as e:
-            logger.warning("Google screener_rank failed: %s", e)
+            logger.warning("Google screener_rank failed: %s: %s", type(e).__name__, e or "(no message)")
             return None

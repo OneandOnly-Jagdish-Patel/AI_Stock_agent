@@ -1,0 +1,71 @@
+symbols:
+  - AAPL
+  - MSFT
+  - SPY
+  - QQQ
+  - NVDA
+
+strategy:
+  rsi_period: 14
+  rsi_oversold: 35
+  rsi_overbought: 65
+  volume_spike_ratio: 1.5
+  vwap_deviation_pct: 0.15
+  take_profit_pct: 0.20
+  stop_loss_pct: 0.12
+  trailing_stop_pct: 0.10
+
+session:
+  timezone: America/New_York
+  start_time: "09:30"
+  end_time: "11:30"
+
+risk:
+  max_risk_per_trade_pct: 1.0
+  daily_max_loss_pct: 2.0
+  max_open_positions: 2
+  pdt_equity_threshold: 25000
+  max_day_trades: 3
+
+llm:
+  enabled: true
+  confidence_threshold: 0.7
+  timeout_seconds: 3
+  watchlist_interval_minutes: 10
+
+execution:
+  max_spread_pct: 0.03
+  use_bracket_orders: true
+
+briefing:
+  enabled: true
+  time: "09:00"
+  news_lookback_hours: 24
+  news_limit: 10
+
+journal_context:
+  enabled: true
+  rsi_tolerance: 5
+  lookback_days: 30
+  min_trades_for_veto: 5
+  min_win_rate: 0.4
+
+screener:
+  enabled: true
+  mode: hybrid
+  anchor_symbols:
+    - SPY
+    - QQQ
+  dynamic_slots: 3
+  run_time: "08:45"
+  candidate_pool_size: 30
+  min_price: 15.0
+  max_price: 500.0
+  min_volume: 1000000
+  max_percent_change: 8.0
+  exclude_sectors: []
+  finnhub_enabled: true
+  exclude_yesterday_losers: true
+
+journal:
+  db_path: data/trades.db

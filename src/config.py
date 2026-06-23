@@ -1,0 +1,167 @@
+"""Load settings from YAML and environment variables."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
+
+
+@dataclass
+class StrategyConfig:
+    rsi_period: int = 14
+    rsi_oversold: float = 35
+    rsi_overbought: float = 65
+    volume_spike_ratio: float = 1.5
+    vwap_deviation_pct: float = 0.15
+    take_profit_pct: float = 0.20
+    stop_loss_pct: float = 0.12
+    trailing_stop_pct: float = 0.10
+
+
+@dataclass
+class SessionConfig:
+    timezone: str = "America/New_York"
+    start_time: str = "09:30"
+    end_time: str = "11:30"
+
+
+@dataclass
+class RiskConfig:
+    max_risk_per_trade_pct: float = 1.0
+    daily_max_loss_pct: float = 2.0
+    max_open_positions: int = 2
+    pdt_equity_threshold: float = 25000
+    max_day_trades: int = 3
+
+
+@dataclass
+class ExecutionConfig:
+    max_spread_pct: float = 0.03
+    use_bracket_orders: bool = True
+
+
+@dataclass
+class BriefingConfig:
+    enabled: bool = True
+    time: str = "09:00"
+    news_lookback_hours: int = 24
+    news_limit: int = 10
+
+
+@dataclass
+class JournalContextConfig:
+    enabled: bool = True
+    rsi_tolerance: float = 5.0
+    lookback_days: int = 30
+    min_trades_for_veto: int = 5
+    min_win_rate: float = 0.4
+
+
+@dataclass
+class ScreenerConfig:
+    enabled: bool = True
+    mode: str = "hybrid"
+    anchor_symbols: list[str] = field(default_factory=lambda: ["SPY", "QQQ"])
+    dynamic_slots: int = 3
+    run_time: str = "08:45"
+    candidate_pool_size: int = 30
+    min_price: float = 15.0
+    max_price: float = 500.0
+    min_volume: float = 1000000
+    max_percent_change: float = 8.0
+    exclude_sectors: list[str] = field(default_factory=list)
+    finnhub_enabled: bool = True
+    exclude_yesterday_losers: bool = True
+
+
+@dataclass
+class LLMConfig:
+    enabled: bool = True
+    confidence_threshold: float = 0.7
+    timeout_seconds: float = 3.0
+    watchlist_interval_minutes: int = 10
+    ollama_host: str = "http://127.0.0.1:11434"
+    ollama_model: str = "phi4-mini"
+    openclaw_gateway_url: str = "http://127.0.0.1:18789"
+    openclaw_model: str = "gemma4:cloud"
+    alert_channel: str = "telegram"
+    alert_webhook_url: str = ""
+
+
+@dataclass
+class AppConfig:
+    symbols: list[str] = field(default_factory=lambda: ["AAPL", "MSFT", "SPY"])
+    strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    session: SessionConfig = field(default_factory=SessionConfig)
+    risk: RiskConfig = field(default_factory=RiskConfig)
+    execution: ExecutionConfig = field(default_factory=ExecutionConfig)
+    briefing: BriefingConfig = field(default_factory=BriefingConfig)
+    journal_context: JournalContextConfig = field(default_factory=JournalContextConfig)
+    screener: ScreenerConfig = field(default_factory=ScreenerConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    journal_db_path: str = "data/trades.db"
+    alpaca_api_key: str = ""
+    alpaca_secret_key: str = ""
+    alpaca_base_url: str = "https://paper-api.alpaca.markets"
+    alpaca_data_feed: str = "iex"
+    finnhub_api_key: str = ""
+
+
+def load_config(path: Path | None = None) -> AppConfig:
+    config_path = path or PROJECT_ROOT / "config" / "settings.yaml"
+    raw: dict = {}
+    if config_path.exists():
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
+
+    strategy_raw = raw.get("strategy", {})
+    session_raw = raw.get("session", {})
+    risk_raw = raw.get("risk", {})
+    execution_raw = raw.get("execution", {})
+    briefing_raw = raw.get("briefing", {})
+    journal_context_raw = raw.get("journal_context", {})
+    screener_raw = raw.get("screener", {})
+    llm_raw = raw.get("llm", {})
+    journal_raw = raw.get("journal", {})
+
+    llm = LLMConfig(
+        enabled=llm_raw.get("enabled", True),
+        confidence_threshold=llm_raw.get("confidence_threshold", 0.7),
+        timeout_seconds=llm_raw.get("timeout_seconds", 3.0),
+        watchlist_interval_minutes=llm_raw.get("watchlist_interval_minutes", 10),
+        ollama_host=os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434"),
+        ollama_model=os.getenv("OLLAMA_MODEL", "phi4-mini"),
+        openclaw_gateway_url=os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789"),
+        openclaw_model=os.getenv("OPENCLAW_MODEL", "gemma4:cloud"),
+        alert_channel=os.getenv("OPENCLAW_ALERT_CHANNEL", "telegram"),
+        alert_webhook_url=os.getenv("ALERT_WEBHOOK_URL", ""),
+    )
+
+    journal_path = journal_raw.get("db_path", "data/trades.db")
+    if not Path(journal_path).is_absolute():
+        journal_path = str(PROJECT_ROOT / journal_path)
+
+    return AppConfig(
+        symbols=raw.get("symbols", ["AAPL", "MSFT", "SPY"]),
+        strategy=StrategyConfig(**{k: strategy_raw[k] for k in StrategyConfig.__dataclass_fields__ if k in strategy_raw}),
+        session=SessionConfig(**{k: session_raw[k] for k in SessionConfig.__dataclass_fields__ if k in session_raw}),
+        risk=RiskConfig(**{k: risk_raw[k] for k in RiskConfig.__dataclass_fields__ if k in risk_raw}),
+        execution=ExecutionConfig(**{k: execution_raw[k] for k in ExecutionConfig.__dataclass_fields__ if k in execution_raw}),
+        briefing=BriefingConfig(**{k: briefing_raw[k] for k in BriefingConfig.__dataclass_fields__ if k in briefing_raw}),
+        journal_context=JournalContextConfig(**{k: journal_context_raw[k] for k in JournalContextConfig.__dataclass_fields__ if k in journal_context_raw}),
+        screener=ScreenerConfig(**{k: screener_raw[k] for k in ScreenerConfig.__dataclass_fields__ if k in screener_raw}),
+        llm=llm,
+        journal_db_path=journal_path,
+        alpaca_api_key=os.getenv("ALPACA_API_KEY", ""),
+        alpaca_secret_key=os.getenv("ALPACA_SECRET_KEY", ""),
+        alpaca_base_url=os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets"),
+        alpaca_data_feed=os.getenv("ALPACA_DATA_FEED", "iex"),
+        finnhub_api_key=os.getenv("FINNHUB_API_KEY", ""),
+    )

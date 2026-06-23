@@ -1,0 +1,108 @@
+body.report-pdf {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 11pt;
+  line-height: 1.55;
+  color: #1a1a1a;
+  max-width: 100%;
+}
+
+h1 {
+  font-size: 22pt;
+  border-bottom: 2px solid #2563eb;
+  padding-bottom: 0.3em;
+  page-break-after: avoid;
+}
+
+h2 {
+  font-size: 15pt;
+  margin-top: 1.4em;
+  color: #1e40af;
+  page-break-after: avoid;
+}
+
+h3 {
+  font-size: 12pt;
+  page-break-after: avoid;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 9.5pt;
+  margin: 1em 0;
+  page-break-inside: avoid;
+}
+
+th,
+td {
+  border: 1px solid #cbd5e1;
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #eff6ff;
+  font-weight: 600;
+}
+
+tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9pt;
+  background: #f1f5f9;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 8.5pt;
+  overflow-x: auto;
+  page-break-inside: avoid;
+}
+
+pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+blockquote {
+  border-left: 4px solid #2563eb;
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.mermaid {
+  text-align: center;
+  margin: 1.2em 0;
+  page-break-inside: avoid;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 1.5em 0;
+}
+
+a {
+  color: #2563eb;
+}
+
+ul,
+ol {
+  padding-left: 1.4em;
+}
+
+li {
+  margin: 0.25em 0;
+}

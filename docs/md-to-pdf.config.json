@@ -1,0 +1,24 @@
+{
+  "dest": "SYSTEM_REPORT.pdf",
+  "pdf_options": {
+    "format": "A4",
+    "margin": {
+      "top": "18mm",
+      "right": "16mm",
+      "bottom": "18mm",
+      "left": "16mm"
+    },
+    "printBackground": true
+  },
+  "stylesheet": "report-pdf.css",
+  "body_class": "report-pdf",
+  "marked_options": {
+    "gfm": true
+  },
+  "launch_options": {
+    "args": ["--no-sandbox"]
+  },
+  "script": [
+    "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"
+  ]
+}

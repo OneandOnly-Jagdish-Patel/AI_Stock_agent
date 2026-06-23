@@ -1,0 +1,85 @@
+import { useCallback, useEffect, useState } from "react";
+import { api } from "../api/client";
+
+function logClass(line: string) {
+  if (line.includes("ERROR") || line.includes("Error")) return "error";
+  if (line.includes("WARNING") || line.includes("Warning")) return "warn";
+  return "info";
+}
+
+export function LogsPage() {
+  const [lines, setLines] = useState<string[]>([]);
+  const [exists, setExists] = useState(true);
+  const [error, setError] = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api.logs(400);
+      setLines(data.lines);
+      setExists(data.exists);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load logs");
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = setInterval(load, 5000);
+    return () => clearInterval(id);
+  }, [autoRefresh, load]);
+
+  return (
+    <>
+      <div className="page-header">
+        <h2>Agent Logs</h2>
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+          <label style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              style={{ marginRight: "0.35rem" }}
+            />
+            Auto-refresh (5s)
+          </label>
+          <button type="button" className="refresh-btn" onClick={load}>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="error">{error}</div>}
+
+      <div className="panel">
+        <div className="panel-header">
+          logs/agent.log
+          <span className="mono" style={{ fontWeight: 400, color: "var(--text-muted)" }}>
+            {lines.length} lines
+          </span>
+        </div>
+        <div className="panel-body">
+          {!exists ? (
+            <div className="empty">
+              Log file not found. Start the trading agent with{" "}
+              <code className="mono">python -m src.main</code> to generate logs.
+            </div>
+          ) : (
+            <div className="log-viewer">
+              {lines.map((line, i) => (
+                <div key={i} className={`log-line ${logClass(line)}`}>
+                  {line}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}

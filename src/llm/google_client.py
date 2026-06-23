@@ -1,0 +1,137 @@
+"""Google AI Studio / Gemini API client for structured LLM tasks."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import time
+
+import aiohttp
+
+from src.config import LLMConfig
+from src.llm.ollama_client import (
+    OllamaClient,
+    PremarketBriefing,
+    ScreenerRanking,
+    TradeVetoDecision,
+    WatchlistRanking,
+)
+from src.llm.prompts import PREMARKET_BRIEFING_PROMPT, SCREENER_RANK_PROMPT, TRADE_VETO_PROMPT, WATCHLIST_RANK_PROMPT
+
+logger = logging.getLogger(__name__)
+
+_GOOGLE_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+
+
+class GoogleClient:
+    def __init__(self, config: LLMConfig) -> None:
+        self.config = config
+        self.api_key = config.google_api_key
+        self.model = config.google_model
+        self._last_request_at: float = 0.0
+        self._rate_lock = asyncio.Lock()
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.api_key)
+
+    async def _rate_limit(self) -> None:
+        rpm = self.config.google_rpm_limit
+        if rpm <= 0:
+            return
+        min_interval = 60.0 / rpm
+        async with self._rate_lock:
+            now = time.monotonic()
+            wait = min_interval - (now - self._last_request_at)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_request_at = time.monotonic()
+
+    async def _generate(self, prompt: str) -> str:
+        if not self.api_key:
+            raise ValueError("GOOGLE_API_KEY not set")
+
+        await self._rate_limit()
+
+        url = f"{_GOOGLE_API_BASE}/models/{self.model}:generateContent"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.1,
+                "responseMimeType": "application/json",
+            },
+        }
+        timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                params={"key": self.api_key},
+                json=payload,
+                timeout=timeout,
+            ) as resp:
+                if resp.status == 429:
+                    raise aiohttp.ClientResponseError(
+                        resp.request_info,
+                        resp.history,
+                        status=429,
+                        message="Google API rate limit (429)",
+                    )
+                resp.raise_for_status()
+                data = await resp.json()
+
+        candidates = data.get("candidates") or []
+        if not candidates:
+            raise ValueError("Google API returned no candidates")
+        parts = candidates[0].get("content", {}).get("parts") or []
+        if not parts:
+            raise ValueError("Google API returned empty content")
+        return parts[0].get("text", "")
+
+    async def trade_veto(self, context: dict) -> TradeVetoDecision | None:
+        prompt = TRADE_VETO_PROMPT.format(context=json.dumps(context, indent=2))
+        for attempt in range(2):
+            try:
+                raw = await self._generate(prompt)
+                parsed = OllamaClient._extract_json(raw)
+                return TradeVetoDecision.model_validate(parsed)
+            except Exception as e:
+                logger.warning("Google trade_veto attempt %d failed: %s", attempt + 1, e)
+        return None
+
+    async def rank_watchlist(self, context: dict) -> WatchlistRanking | None:
+        prompt = WATCHLIST_RANK_PROMPT.format(context=json.dumps(context, indent=2))
+        try:
+            raw = await self._generate(prompt)
+            parsed = OllamaClient._extract_json(raw)
+            return WatchlistRanking.model_validate(parsed)
+        except Exception as e:
+            logger.warning("Google rank_watchlist failed: %s", e)
+            return None
+
+    async def premarket_briefing(self, context: dict) -> PremarketBriefing | None:
+        prompt = PREMARKET_BRIEFING_PROMPT.format(
+            symbols=", ".join(context.get("symbols", [])),
+            news=json.dumps(context.get("news", []), indent=2),
+            keyword_flags=json.dumps(context.get("keyword_flags", {}), indent=2),
+        )
+        try:
+            raw = await self._generate(prompt)
+            parsed = OllamaClient._extract_json(raw)
+            return PremarketBriefing.model_validate(parsed)
+        except Exception as e:
+            logger.warning("Google premarket_briefing failed: %s", e)
+            return None
+
+    async def screener_rank(self, context: dict) -> ScreenerRanking | None:
+        prompt = SCREENER_RANK_PROMPT.format(
+            slots=context.get("slots", 3),
+            candidates=json.dumps(context.get("candidates", []), indent=2),
+        )
+        try:
+            raw = await self._generate(prompt)
+            parsed = OllamaClient._extract_json(raw)
+            return ScreenerRanking.model_validate(parsed)
+        except Exception as e:
+            logger.warning("Google screener_rank failed: %s", e)
+            return None

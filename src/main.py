@@ -209,8 +209,17 @@ class TradingAgent:
         self.risk.reset_session(equity, today)
 
         logger.info("Account equity: $%.2f", equity)
-        ollama_ok = await self.llm.check_health()
-        logger.info("Ollama health: %s (model=%s)", ollama_ok, self.config.llm.ollama_model)
+        llm_ok = await self.llm.check_health()
+        primary = self.config.llm.resolved_primary()
+        if primary == "google" and self.config.llm.google_api_key:
+            logger.info(
+                "LLM primary: Google (%s), timeout=%ss, rpm_limit=%s",
+                self.config.llm.google_model,
+                self.config.llm.timeout_seconds,
+                self.config.llm.google_rpm_limit,
+            )
+        else:
+            logger.info("Ollama health: %s (model=%s)", llm_ok, self.config.llm.ollama_model)
 
         await self._run_screener()
         await self._run_premarket_briefing()

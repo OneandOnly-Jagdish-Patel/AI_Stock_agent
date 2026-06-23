@@ -84,15 +84,30 @@ class ScreenerConfig:
 @dataclass
 class LLMConfig:
     enabled: bool = True
+    primary_provider: str = "auto"
     confidence_threshold: float = 0.7
     timeout_seconds: float = 3.0
     watchlist_interval_minutes: int = 10
+    google_api_key: str = ""
+    google_model: str = "gemma-4-31b-it"
+    google_rpm_limit: int = 12
     ollama_host: str = "http://127.0.0.1:11434"
     ollama_model: str = "phi4-mini"
     openclaw_gateway_url: str = "http://127.0.0.1:18789"
     openclaw_model: str = "gemma4:cloud"
     alert_channel: str = "telegram"
     alert_webhook_url: str = ""
+
+    def resolved_primary(self) -> str:
+        """Return active LLM provider: google, ollama, or none."""
+        if self.primary_provider == "google":
+            return "google" if self.google_api_key else "ollama"
+        if self.primary_provider == "ollama":
+            return "ollama"
+        # auto: prefer Google when API key is set
+        if self.google_api_key:
+            return "google"
+        return "ollama"
 
 
 @dataclass
@@ -133,9 +148,13 @@ def load_config(path: Path | None = None) -> AppConfig:
 
     llm = LLMConfig(
         enabled=llm_raw.get("enabled", True),
+        primary_provider=llm_raw.get("primary_provider", os.getenv("LLM_PRIMARY_PROVIDER", "auto")),
         confidence_threshold=llm_raw.get("confidence_threshold", 0.7),
         timeout_seconds=llm_raw.get("timeout_seconds", 3.0),
         watchlist_interval_minutes=llm_raw.get("watchlist_interval_minutes", 10),
+        google_api_key=os.getenv("GOOGLE_API_KEY", ""),
+        google_model=os.getenv("GOOGLE_MODEL", llm_raw.get("google_model", "gemma-4-31b-it")),
+        google_rpm_limit=int(llm_raw.get("google_rpm_limit", os.getenv("GOOGLE_RPM_LIMIT", "12"))),
         ollama_host=os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434"),
         ollama_model=os.getenv("OLLAMA_MODEL", "phi4-mini"),
         openclaw_gateway_url=os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789"),

@@ -29,9 +29,12 @@ risk:
 
 llm:
   enabled: true
+  primary_provider: auto   # auto | google | ollama (auto uses Google when GOOGLE_API_KEY is set)
   confidence_threshold: 0.7
-  timeout_seconds: 3
-  watchlist_interval_minutes: 10
+  timeout_seconds: 30       # increase for cloud/local LLM latency
+  watchlist_interval_minutes: 15   # 15 min safer for Google free tier (~12 RPM)
+  google_model: gemma-4-31b-it
+  google_rpm_limit: 12
 
 execution:
   max_spread_pct: 0.03

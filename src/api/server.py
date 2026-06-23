@@ -48,9 +48,13 @@ def _sanitize_config() -> dict[str, Any]:
         "screener": _config.screener.__dict__,
         "llm": {
             "enabled": _config.llm.enabled,
+            "primary_provider": _config.llm.resolved_primary(),
             "confidence_threshold": _config.llm.confidence_threshold,
             "timeout_seconds": _config.llm.timeout_seconds,
             "watchlist_interval_minutes": _config.llm.watchlist_interval_minutes,
+            "google_model": _config.llm.google_model,
+            "google_rpm_limit": _config.llm.google_rpm_limit,
+            "has_google_key": bool(_config.llm.google_api_key),
             "ollama_model": _config.llm.ollama_model,
             "openclaw_model": _config.llm.openclaw_model,
             "alert_channel": _config.llm.alert_channel,

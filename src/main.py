@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from datetime import datetime
@@ -55,7 +56,11 @@ class TradingAgent:
         self._stream: MarketDataStream | None = None
         self._trade_stream: OrderUpdateStream | None = None
         self._running = False
+        self._stopping = False
         self._watchlist_task: asyncio.Task | None = None
+        self._session_task: asyncio.Task | None = None
+        self._stream_task: asyncio.Task | None = None
+        self._trade_stream_task: asyncio.Task | None = None
         self._session_closed_date: str | None = None
 
     def _in_trading_session(self) -> bool:
@@ -191,11 +196,48 @@ class TradingAgent:
                 logger.warning("Kill switch active — flattening and stopping")
                 self.positions.flatten_all()
                 await self.llm.alert("Kill Switch", self.risk.state.kill_reason)
-                self._running = False
-                if self._stream:
-                    self._stream.stop()
-                if self._trade_stream:
-                    self._trade_stream.stop()
+                asyncio.create_task(self.stop())
+
+    async def stop(self) -> None:
+        """Stop streams and background tasks so the process can exit."""
+        if self._stopping:
+            return
+        self._stopping = True
+        logger.info("Shutting down agent...")
+        self._running = False
+
+        if self._stream:
+            self._stream.stop()
+        if self._trade_stream:
+            self._trade_stream.stop()
+
+        current = asyncio.current_task()
+        tasks = [
+            t
+            for t in (
+                self._watchlist_task,
+                self._session_task,
+                self._stream_task,
+                self._trade_stream_task,
+            )
+            if t and not t.done() and t is not current
+        ]
+        for task in tasks:
+            task.cancel()
+
+        if tasks:
+            _, pending = await asyncio.wait(tasks, timeout=5.0)
+            if pending:
+                logger.warning("%d task(s) still running after 5s — cancelling again", len(pending))
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+
+        if self.risk.is_killed():
+            self.positions.flatten_all()
+            await self.llm.alert("Kill Switch", self.risk.state.kill_reason)
+
+        logger.info("Agent stopped")
 
     async def run(self) -> None:
         if not self.config.alpaca_api_key or not self.config.alpaca_secret_key:
@@ -242,7 +284,9 @@ class TradingAgent:
             )
 
         self._watchlist_task = asyncio.create_task(self._watchlist_loop())
-        session_task = asyncio.create_task(self._session_guard_loop())
+        self._session_task = asyncio.create_task(self._session_guard_loop())
+        self._stream_task = asyncio.create_task(self._stream.run())
+        self._trade_stream_task = asyncio.create_task(self._trade_stream.run())
 
         await self.llm.alert(
             "Agent Started",
@@ -250,52 +294,39 @@ class TradingAgent:
         )
 
         try:
-            await asyncio.gather(
-                self._stream.run(),
-                self._trade_stream.run(),
-            )
+            await asyncio.gather(self._stream_task, self._trade_stream_task)
         except asyncio.CancelledError:
             pass
         finally:
-            self._running = False
-            if self._watchlist_task:
-                self._watchlist_task.cancel()
-            session_task.cancel()
-            if self._stream:
-                self._stream.stop()
-            if self._trade_stream:
-                self._trade_stream.stop()
-            if self.risk.is_killed():
-                self.positions.flatten_all()
-                await self.llm.alert("Kill Switch", self.risk.state.kill_reason)
+            await self.stop()
 
 
 def main() -> None:
     config = load_config()
     agent = TradingAgent(config)
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    async def amain() -> None:
+        loop = asyncio.get_running_loop()
+        force_exit = False
 
-    def shutdown_handler(*_: object) -> None:
-        logger.info("Shutdown signal received")
-        agent._running = False
-        if agent._stream:
-            agent._stream.stop()
-        if agent._trade_stream:
-            agent._trade_stream.stop()
-        for task in asyncio.all_tasks(loop):
-            task.cancel()
+        def on_signal() -> None:
+            nonlocal force_exit
+            if force_exit:
+                logger.warning("Second interrupt — forcing exit")
+                os._exit(130)
+            force_exit = True
+            logger.info("Shutdown signal received")
+            asyncio.create_task(agent.stop())
 
-    signal.signal(signal.SIGINT, shutdown_handler)
-    signal.signal(signal.SIGTERM, shutdown_handler)
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, on_signal)
+
+        await agent.run()
 
     try:
-        loop.run_until_complete(agent.run())
+        asyncio.run(amain())
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
-    finally:
-        loop.close()
 
 
 if __name__ == "__main__":

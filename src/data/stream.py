@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -69,7 +70,11 @@ class MarketDataStream:
 
     async def run(self) -> None:
         logger.info("Starting market data stream for %s", self.symbols)
-        await self._stream._run_forever()
+        try:
+            await self._stream._run_forever()
+        except asyncio.CancelledError:
+            self.stop()
+            raise
 
     def stop(self) -> None:
         try:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
@@ -47,7 +48,11 @@ class OrderUpdateStream:
 
     async def run(self) -> None:
         logger.info("Starting trading update stream")
-        await self._stream._run_forever()
+        try:
+            await self._stream._run_forever()
+        except asyncio.CancelledError:
+            self.stop()
+            raise
 
     def stop(self) -> None:
         try:

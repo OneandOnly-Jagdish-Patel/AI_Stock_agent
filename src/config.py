@@ -48,6 +48,20 @@ class ExecutionConfig:
 
 
 @dataclass
+class AIExitConfig:
+    enabled: bool = True
+    profit_trigger_pct: float = 0.40
+    loss_trigger_pct: float = -0.06
+    min_take_profit_pct: float = 0.20
+    max_target_pct: float = 1.0
+    max_hold_minutes: int = 20
+    max_loss_hold_minutes: int = 8
+    recheck_interval_bars: int = 5
+    bar_context_count: int = 30
+    hard_stop_loss_pct: float = 0.12
+
+
+@dataclass
 class BriefingConfig:
     enabled: bool = True
     time: str = "09:00"
@@ -121,6 +135,7 @@ class AppConfig:
     briefing: BriefingConfig = field(default_factory=BriefingConfig)
     journal_context: JournalContextConfig = field(default_factory=JournalContextConfig)
     screener: ScreenerConfig = field(default_factory=ScreenerConfig)
+    ai_exit: AIExitConfig = field(default_factory=AIExitConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     journal_db_path: str = "data/trades.db"
     alpaca_api_key: str = ""
@@ -144,8 +159,12 @@ def load_config(path: Path | None = None) -> AppConfig:
     briefing_raw = raw.get("briefing", {})
     journal_context_raw = raw.get("journal_context", {})
     screener_raw = raw.get("screener", {})
+    ai_exit_raw = raw.get("ai_exit", {})
     llm_raw = raw.get("llm", {})
     journal_raw = raw.get("journal", {})
+
+    strategy = StrategyConfig(**{k: strategy_raw[k] for k in StrategyConfig.__dataclass_fields__ if k in strategy_raw})
+    hard_stop = ai_exit_raw.get("hard_stop_loss_pct", strategy.stop_loss_pct)
 
     llm = LLMConfig(
         enabled=llm_raw.get("enabled", True),
@@ -172,15 +191,19 @@ def load_config(path: Path | None = None) -> AppConfig:
     if not Path(journal_path).is_absolute():
         journal_path = str(PROJECT_ROOT / journal_path)
 
+    ai_exit_fields = {k: ai_exit_raw[k] for k in AIExitConfig.__dataclass_fields__ if k in ai_exit_raw}
+    ai_exit_fields.setdefault("hard_stop_loss_pct", hard_stop)
+
     return AppConfig(
         symbols=raw.get("symbols", ["AAPL", "MSFT", "SPY"]),
-        strategy=StrategyConfig(**{k: strategy_raw[k] for k in StrategyConfig.__dataclass_fields__ if k in strategy_raw}),
+        strategy=strategy,
         session=SessionConfig(**{k: session_raw[k] for k in SessionConfig.__dataclass_fields__ if k in session_raw}),
         risk=RiskConfig(**{k: risk_raw[k] for k in RiskConfig.__dataclass_fields__ if k in risk_raw}),
         execution=ExecutionConfig(**{k: execution_raw[k] for k in ExecutionConfig.__dataclass_fields__ if k in execution_raw}),
         briefing=BriefingConfig(**{k: briefing_raw[k] for k in BriefingConfig.__dataclass_fields__ if k in briefing_raw}),
         journal_context=JournalContextConfig(**{k: journal_context_raw[k] for k in JournalContextConfig.__dataclass_fields__ if k in journal_context_raw}),
         screener=ScreenerConfig(**{k: screener_raw[k] for k in ScreenerConfig.__dataclass_fields__ if k in screener_raw}),
+        ai_exit=AIExitConfig(**ai_exit_fields),
         llm=llm,
         journal_db_path=journal_path,
         alpaca_api_key=os.getenv("ALPACA_API_KEY", ""),

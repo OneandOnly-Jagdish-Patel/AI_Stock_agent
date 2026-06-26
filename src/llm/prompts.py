@@ -58,3 +58,28 @@ Candidates:
 
 Respond exactly:
 {{"picks": ["SYM1", "SYM2", "SYM3"], "reasons": {{"SYM1": "brief reason"}}, "summary": "one line"}}"""
+
+EXIT_ADVISOR_PROMPT = """You are an intraday scalping exit advisor. A position is open; decide whether to sell now or hold for a target.
+Respond with JSON only, no other text.
+
+Zone: {zone}
+(hard stop loss at -{hard_stop_pct}% is enforced by the system — you cannot widen it)
+
+Position context:
+{context}
+
+Rules for zone "profit":
+- "hold" only if momentum supports reaching target_pct within max_hold_minutes
+- target_pct must be between {min_take_profit_pct} and {max_target_pct} (percent from entry)
+- max_hold_minutes must be <= {max_hold_minutes}
+- If unsure or session time is short, choose "sell"
+
+Rules for zone "loss":
+- "hold" only if a bounce to target_pct (>= 0, recovery toward breakeven/small profit) is plausible soon
+- max_hold_minutes must be <= {max_loss_hold_minutes}
+- Never recommend holding through the hard stop
+- If unsure, choose "sell"
+
+Respond exactly:
+{{"action": "hold" or "sell", "target_pct": 0.0, "max_hold_minutes": 10, "confidence": 0.0-1.0, "reason": "brief reason"}}
+For "sell", target_pct and max_hold_minutes may be null."""

@@ -11,13 +11,20 @@ import aiohttp
 
 from src.config import LLMConfig
 from src.llm.ollama_client import (
+    ExitAdvisorDecision,
     OllamaClient,
     PremarketBriefing,
     ScreenerRanking,
     TradeVetoDecision,
     WatchlistRanking,
 )
-from src.llm.prompts import PREMARKET_BRIEFING_PROMPT, SCREENER_RANK_PROMPT, TRADE_VETO_PROMPT, WATCHLIST_RANK_PROMPT
+from src.llm.prompts import (
+    EXIT_ADVISOR_PROMPT,
+    PREMARKET_BRIEFING_PROMPT,
+    SCREENER_RANK_PROMPT,
+    TRADE_VETO_PROMPT,
+    WATCHLIST_RANK_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -192,3 +199,22 @@ class GoogleClient:
                 logger.warning("Google screener_rank failed: %s: %s", type(e).__name__, e or "(no message)")
                 return None
         return None
+
+    async def exit_advisor(self, context: dict) -> ExitAdvisorDecision | None:
+        ai_exit = context.get("_ai_exit_limits", {})
+        prompt = EXIT_ADVISOR_PROMPT.format(
+            zone=context.get("zone", "profit"),
+            hard_stop_pct=ai_exit.get("hard_stop_loss_pct", 0.12),
+            context=json.dumps({k: v for k, v in context.items() if not k.startswith("_")}, indent=2),
+            min_take_profit_pct=ai_exit.get("min_take_profit_pct", 0.20),
+            max_target_pct=ai_exit.get("max_target_pct", 1.0),
+            max_hold_minutes=ai_exit.get("max_hold_minutes", 20),
+            max_loss_hold_minutes=ai_exit.get("max_loss_hold_minutes", 8),
+        )
+        try:
+            raw = await self._generate(prompt)
+            parsed = OllamaClient._extract_json(raw)
+            return ExitAdvisorDecision.model_validate(parsed)
+        except Exception as e:
+            logger.warning("Google exit_advisor failed: %s: %s", type(e).__name__, e or "(no message)")
+            return None

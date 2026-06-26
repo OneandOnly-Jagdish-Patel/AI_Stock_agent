@@ -7,7 +7,14 @@ from collections.abc import Awaitable, Callable
 
 from src.config import LLMConfig
 from src.llm.google_client import GoogleClient
-from src.llm.ollama_client import OllamaClient, PremarketBriefing, ScreenerRanking, TradeVetoDecision, WatchlistRanking
+from src.llm.ollama_client import (
+    ExitAdvisorDecision,
+    OllamaClient,
+    PremarketBriefing,
+    ScreenerRanking,
+    TradeVetoDecision,
+    WatchlistRanking,
+)
 from src.llm.openclaw_client import OpenClawClient
 
 logger = logging.getLogger(__name__)
@@ -137,6 +144,39 @@ class LLMRouter:
             }
         )
         return result  # type: ignore[return-value]
+
+    async def exit_advisor(self, context: dict) -> tuple[ExitAdvisorDecision, str]:
+        """Fail-safe: sell if LLM unavailable or low confidence."""
+        sell = ExitAdvisorDecision(action="sell", confidence=0.0, reason="llm_unavailable_fail_safe")
+
+        if not self.config.enabled:
+            return sell, "none"
+
+        if self._ollama_healthy is None and self._primary != "google":
+            await self.check_health()
+
+        result, source = await self._first_result(
+            {
+                "google": lambda: self.google.exit_advisor(context),
+                "ollama": lambda: self.ollama.exit_advisor(context),
+                "openclaw": lambda: self.openclaw.exit_advisor(context),
+            }
+        )
+        if result is None:
+            logger.info("LLM exit_advisor unavailable — fail-safe sell")
+            return sell, "fail_safe"
+
+        decision = result  # type: ignore[assignment]
+        if decision.confidence < self.config.confidence_threshold:
+            return (
+                ExitAdvisorDecision(
+                    action="sell",
+                    confidence=decision.confidence,
+                    reason=f"low_confidence: {decision.reason}",
+                ),
+                source,
+            )
+        return decision, source
 
     async def alert(self, title: str, message: str) -> None:
         await self.openclaw.send_alert(title, message)

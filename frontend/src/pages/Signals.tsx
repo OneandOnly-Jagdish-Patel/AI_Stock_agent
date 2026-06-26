@@ -8,6 +8,7 @@ const TYPES = [
   { value: "", label: "All signals" },
   { value: "entry", label: "Entries (approved)" },
   { value: "entry_vetoed", label: "Entries vetoed" },
+  { value: "exit_advisor", label: "AI exit advisor" },
   { value: "exit", label: "Exits" },
 ];
 
@@ -94,7 +95,15 @@ export function SignalsPage() {
                     </td>
                     <td>
                       <span
-                        className={`badge badge-${s.signal_type === "entry_vetoed" ? "veto" : s.signal_type === "exit" ? "exit" : "entry"}`}
+                        className={`badge badge-${
+                          s.signal_type === "entry_vetoed"
+                            ? "veto"
+                            : s.signal_type === "exit"
+                              ? "exit"
+                              : s.signal_type === "exit_advisor"
+                                ? "screener"
+                                : "entry"
+                        }`}
                       >
                         {s.signal_type}
                       </span>

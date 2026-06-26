@@ -46,6 +46,7 @@ def _sanitize_config() -> dict[str, Any]:
         "briefing": _config.briefing.__dict__,
         "journal_context": _config.journal_context.__dict__,
         "screener": _config.screener.__dict__,
+        "ai_exit": _config.ai_exit.__dict__,
         "llm": {
             "enabled": _config.llm.enabled,
             "primary_provider": _config.llm.resolved_primary(),

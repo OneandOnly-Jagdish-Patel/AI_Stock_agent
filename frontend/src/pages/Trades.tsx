@@ -9,7 +9,14 @@ const EXIT_LABELS: Record<string, string> = {
   take_profit: "Take profit hit",
   trailing_stop: "Trailing stop",
   rsi_overbought: "RSI overbought",
+  hard_stop: "Hard stop loss",
   entry_fill: "Entry filled",
+  ai_exit_profit: "AI exit (profit)",
+  ai_exit_loss: "AI exit (loss)",
+  ai_exit_target_profit: "AI profit target hit",
+  ai_exit_target_loss: "AI loss recovery target hit",
+  ai_exit_timeout_profit: "AI profit hold timed out",
+  ai_exit_timeout_loss: "AI loss hold timed out",
 };
 
 function exitLabel(reason?: string) {

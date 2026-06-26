@@ -56,8 +56,16 @@ class OrderExecutor:
         logger.info("Submitted market BUY %s x %s -> %s", qty, symbol, order.id)
         return order
 
-    def submit_bracket_buy(self, symbol: str, qty: float, ref_price: float) -> Any:
-        take_profit, stop_loss = self._bracket_prices(ref_price, self.config.strategy)
+    def submit_bracket_buy(
+        self,
+        symbol: str,
+        qty: float,
+        ref_price: float,
+        take_profit_pct: float | None = None,
+    ) -> Any:
+        tp_pct = take_profit_pct if take_profit_pct is not None else self.config.strategy.take_profit_pct
+        take_profit = round(ref_price * (1 + tp_pct / 100), 2)
+        stop_loss = round(ref_price * (1 - self.config.strategy.stop_loss_pct / 100), 2)
         request = MarketOrderRequest(
             symbol=symbol,
             qty=qty,

@@ -41,6 +41,18 @@ execution:
   max_spread_pct: 0.03
   use_bracket_orders: true
 
+ai_exit:
+  enabled: true
+  profit_trigger_pct: 0.40
+  loss_trigger_pct: -0.06
+  min_take_profit_pct: 0.20
+  max_target_pct: 1.0
+  max_hold_minutes: 20
+  max_loss_hold_minutes: 8
+  recheck_interval_bars: 5
+  bar_context_count: 30
+  hard_stop_loss_pct: 0.12
+
 briefing:
   enabled: true
   time: "09:00"

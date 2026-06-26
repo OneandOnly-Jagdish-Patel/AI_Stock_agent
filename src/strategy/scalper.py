@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from src.config import AppConfig
@@ -12,6 +14,7 @@ from src.journal.logger import TradeJournal, TradeRecord
 from src.llm.router import LLMRouter
 from src.risk.manager import RiskManager
 from src.risk.sizing import calculate_position_size
+from src.strategy.exit_context import build_exit_context, normalize_exit_decision
 from src.strategy.indicators import IndicatorState
 from src.strategy.signals import SignalType, evaluate_entry, evaluate_exit
 
@@ -25,6 +28,15 @@ class ScalpState(str, Enum):
     IN_POSITION = "in_position"
     TO_SELL = "to_sell"
     SELL_SUBMITTED = "sell_submitted"
+
+
+@dataclass
+class ActiveExitPlan:
+    zone: str
+    target_pct: float
+    deadline: datetime
+    source: str
+    reason: str
 
 
 class SymbolScalper:
@@ -55,6 +67,12 @@ class SymbolScalper:
         self.sell_order_id: str | None = None
         self.pending_exit_reason: str = ""
         self.use_bracket = config.execution.use_bracket_orders
+        self.entry_time: datetime | None = None
+        self.ai_profit_consulted = False
+        self.ai_loss_consulted = False
+        self.active_plan: ActiveExitPlan | None = None
+        self.bars_in_position = 0
+        self.last_ai_bar_index = 0
 
     def _indicator_kwargs(self, context: dict) -> dict:
         return {
@@ -63,6 +81,20 @@ class SymbolScalper:
             "volume_ratio": context.get("volume_ratio"),
         }
 
+    def _pnl_pct(self, price: float) -> float:
+        if self.entry_price <= 0:
+            return 0.0
+        return ((price - self.entry_price) / self.entry_price) * 100
+
+    def _should_consult(self, zone: str) -> bool:
+        ai = self.config.ai_exit
+        consulted = self.ai_profit_consulted if zone == "profit" else self.ai_loss_consulted
+        if not consulted:
+            return True
+        if self.active_plan and ai.recheck_interval_bars > 0:
+            return (self.bars_in_position - self.last_ai_bar_index) >= ai.recheck_interval_bars
+        return False
+
     async def on_bar(self, indicator_state: IndicatorState) -> None:
         quote = self.stream.get_quote(self.symbol)
         close = indicator_state.latest_close()
@@ -70,20 +102,7 @@ class SymbolScalper:
             return
 
         if self.state == ScalpState.IN_POSITION:
-            self.highest_since_entry = max(self.highest_since_entry, close)
-            exit_signal = evaluate_exit(
-                self.entry_price,
-                close,
-                self.highest_since_entry,
-                self.config.strategy,
-                indicator_state.rsi(self.config.strategy.rsi_period),
-            )
-            # Bracket orders handle fixed TP/SL on Alpaca; software handles trailing/RSI only
-            if self.use_bracket and exit_signal.reason in ("stop_loss", "take_profit"):
-                return
-            if exit_signal.signal_type == SignalType.SELL:
-                self.journal.log_signal(self.symbol, "exit", exit_signal.reason)
-                await self._submit_sell(close, exit_signal.reason)
+            await self._handle_in_position(close, indicator_state)
             return
 
         if self.state not in (ScalpState.IDLE, ScalpState.TO_BUY):
@@ -175,6 +194,124 @@ class SymbolScalper:
         )
         await self._submit_buy(close)
 
+    async def _handle_in_position(self, close: float, indicator_state: IndicatorState) -> None:
+        ai = self.config.ai_exit
+        self.bars_in_position += 1
+        self.highest_since_entry = max(self.highest_since_entry, close)
+        pnl_pct = self._pnl_pct(close)
+
+        if pnl_pct <= -ai.hard_stop_loss_pct:
+            await self._exit(close, "hard_stop", market=True)
+            return
+
+        if self.active_plan:
+            if pnl_pct >= self.active_plan.target_pct:
+                await self._exit(close, f"ai_exit_target_{self.active_plan.zone}", market=True)
+                return
+            if datetime.now(timezone.utc) >= self.active_plan.deadline:
+                await self._exit(close, f"ai_exit_timeout_{self.active_plan.zone}", market=True)
+                return
+
+        if ai.enabled and self.config.llm.enabled and pnl_pct >= ai.profit_trigger_pct:
+            if self._should_consult("profit"):
+                handled = await self._consult_exit_advisor("profit", close, indicator_state)
+                if handled:
+                    return
+
+        if ai.enabled and self.config.llm.enabled and pnl_pct <= ai.loss_trigger_pct:
+            if self._should_consult("loss"):
+                handled = await self._consult_exit_advisor("loss", close, indicator_state)
+                if handled:
+                    return
+
+        exit_signal = evaluate_exit(
+            self.entry_price,
+            close,
+            self.highest_since_entry,
+            self.config.strategy,
+            indicator_state.rsi(self.config.strategy.rsi_period),
+        )
+
+        skip_reasons: set[str] = set()
+        if self.use_bracket:
+            skip_reasons.add("stop_loss")
+            if ai.enabled:
+                skip_reasons.add("take_profit")
+        if ai.enabled and not self.active_plan and pnl_pct < ai.profit_trigger_pct:
+            skip_reasons.add("take_profit")
+
+        if exit_signal.reason in skip_reasons:
+            return
+        if exit_signal.signal_type == SignalType.SELL:
+            await self._exit(close, exit_signal.reason)
+
+    async def _consult_exit_advisor(
+        self,
+        zone: str,
+        close: float,
+        indicator_state: IndicatorState,
+    ) -> bool:
+        if self.entry_time is None:
+            return False
+
+        ctx = build_exit_context(
+            self.symbol,
+            self.entry_price,
+            self.entry_time,
+            close,
+            indicator_state,
+            self.config,
+            zone,
+        )
+        decision, source = await self.llm.exit_advisor(ctx)
+        decision = normalize_exit_decision(decision, zone, self.config.ai_exit)
+
+        if zone == "profit":
+            self.ai_profit_consulted = True
+        else:
+            self.ai_loss_consulted = True
+        self.last_ai_bar_index = self.bars_in_position
+
+        self.journal.log_signal(
+            self.symbol,
+            "exit_advisor",
+            zone,
+            decision.action,
+            decision.confidence,
+            f"[{source}] target={decision.target_pct}% hold={decision.max_hold_minutes}m — {decision.reason}",
+            rsi=ctx.get("rsi"),
+            vwap_dev=ctx.get("vwap_deviation_pct"),
+            volume_ratio=ctx.get("volume_ratio"),
+        )
+
+        if decision.action == "sell":
+            await self._exit(close, f"ai_exit_{zone}", market=True)
+            return True
+
+        hold_mins = decision.max_hold_minutes or (
+            self.config.ai_exit.max_hold_minutes if zone == "profit" else self.config.ai_exit.max_loss_hold_minutes
+        )
+        self.active_plan = ActiveExitPlan(
+            zone=zone,
+            target_pct=decision.target_pct or 0.0,
+            deadline=datetime.now(timezone.utc) + timedelta(minutes=hold_mins),
+            source=source,
+            reason=decision.reason,
+        )
+        logger.info(
+            "%s AI hold (%s): target=%.2f%% deadline=%dm — %s",
+            self.symbol,
+            zone,
+            self.active_plan.target_pct,
+            hold_mins,
+            decision.reason,
+        )
+        return False
+
+    async def _exit(self, price: float, reason: str, market: bool = False) -> None:
+        self.journal.log_signal(self.symbol, "exit", reason)
+        await self._submit_sell(price, reason, market=market)
+
     async def _submit_buy(self, price: float) -> None:
         equity = self.executor.get_equity()
         self.risk.update_equity(equity)
@@ -189,20 +326,26 @@ class SymbolScalper:
 
         self.state = ScalpState.BUY_SUBMITTED
         if self.use_bracket:
-            order = self.executor.submit_bracket_buy(self.symbol, qty, price)
+            tp_pct = self.config.ai_exit.max_target_pct if self.config.ai_exit.enabled else None
+            order = self.executor.submit_bracket_buy(self.symbol, qty, price, take_profit_pct=tp_pct)
         else:
             order = self.executor.submit_market_buy(self.symbol, qty)
         self.buy_order_id = str(order.id)
         self.position_qty = qty
         logger.info("%s buy submitted: %s shares @ ~%.2f", self.symbol, qty, price)
 
-    async def _submit_sell(self, price: float, reason: str) -> None:
+    async def _submit_sell(self, price: float, reason: str, market: bool = False) -> None:
         if self.position_qty <= 0:
             return
         self.pending_exit_reason = reason
         self.executor.cancel_open_orders(self.symbol)
         self.state = ScalpState.SELL_SUBMITTED
-        if reason in ("trailing_stop", "rsi_overbought"):
+        use_market = market or reason in (
+            "trailing_stop",
+            "rsi_overbought",
+            "hard_stop",
+        ) or reason.startswith("ai_exit")
+        if use_market:
             order = self.executor.submit_market_sell(self.symbol, self.position_qty)
         else:
             limit_price = max(price, self.entry_price)
@@ -224,6 +367,12 @@ class SymbolScalper:
             self.highest_since_entry = filled_price
             self.position_qty = filled_qty
             self.state = ScalpState.IN_POSITION
+            self.entry_time = datetime.now(timezone.utc)
+            self.ai_profit_consulted = False
+            self.ai_loss_consulted = False
+            self.active_plan = None
+            self.bars_in_position = 0
+            self.last_ai_bar_index = 0
             self.risk.register_open(self.symbol)
             self.journal.log_trade(
                 TradeRecord(
@@ -274,3 +423,9 @@ class SymbolScalper:
         self.buy_order_id = None
         self.sell_order_id = None
         self.pending_exit_reason = ""
+        self.entry_time = None
+        self.ai_profit_consulted = False
+        self.ai_loss_consulted = False
+        self.active_plan = None
+        self.bars_in_position = 0
+        self.last_ai_bar_index = 0

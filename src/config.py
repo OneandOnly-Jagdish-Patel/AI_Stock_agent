@@ -90,6 +90,7 @@ class LLMConfig:
     watchlist_interval_minutes: int = 10
     google_api_key: str = ""
     google_model: str = "gemma-4-31b-it"
+    google_thinking_level: str = "MINIMAL"
     google_rpm_limit: int = 12
     ollama_host: str = "http://127.0.0.1:11434"
     ollama_model: str = "phi4-mini"
@@ -154,6 +155,10 @@ def load_config(path: Path | None = None) -> AppConfig:
         watchlist_interval_minutes=llm_raw.get("watchlist_interval_minutes", 10),
         google_api_key=os.getenv("GOOGLE_API_KEY", ""),
         google_model=os.getenv("GOOGLE_MODEL", llm_raw.get("google_model", "gemma-4-31b-it")),
+        google_thinking_level=os.getenv(
+            "GOOGLE_THINKING_LEVEL",
+            llm_raw.get("google_thinking_level", "MINIMAL"),
+        ),
         google_rpm_limit=int(llm_raw.get("google_rpm_limit", os.getenv("GOOGLE_RPM_LIMIT", "12"))),
         ollama_host=os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434"),
         ollama_model=os.getenv("OLLAMA_MODEL", "phi4-mini"),

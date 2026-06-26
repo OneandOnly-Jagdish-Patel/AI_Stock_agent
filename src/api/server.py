@@ -53,6 +53,7 @@ def _sanitize_config() -> dict[str, Any]:
             "timeout_seconds": _config.llm.timeout_seconds,
             "watchlist_interval_minutes": _config.llm.watchlist_interval_minutes,
             "google_model": _config.llm.google_model,
+            "google_thinking_level": _config.llm.google_thinking_level,
             "google_rpm_limit": _config.llm.google_rpm_limit,
             "has_google_key": bool(_config.llm.google_api_key),
             "ollama_model": _config.llm.ollama_model,

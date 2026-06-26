@@ -36,6 +36,16 @@ class GoogleClient:
     def configured(self) -> bool:
         return bool(self.api_key)
 
+    def _generation_config(self) -> dict:
+        config: dict = {
+            "temperature": 0.1,
+            "responseMimeType": "application/json",
+        }
+        level = self.config.google_thinking_level.strip()
+        if level and level.lower() not in ("off", "none", "disabled"):
+            config["thinkingConfig"] = {"thinkingLevel": level.upper()}
+        return config
+
     async def _rate_limit(self) -> None:
         rpm = self.config.google_rpm_limit
         if rpm <= 0:
@@ -57,11 +67,7 @@ class GoogleClient:
         url = f"{_GOOGLE_API_BASE}/models/{self.model}:generateContent"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": 0.1,
-                "responseMimeType": "application/json",
-                "thinkingConfig": {"thinkingLevel": "MINIMAL"},
-            },
+            "generationConfig": self._generation_config(),
         }
         timeout = aiohttp.ClientTimeout(
             total=None,

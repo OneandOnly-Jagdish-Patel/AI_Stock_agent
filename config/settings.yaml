@@ -34,6 +34,7 @@ llm:
   timeout_seconds: 90       # screener prompts + Gemma thinking can exceed 30s
   watchlist_interval_minutes: 15   # 15 min safer for Google free tier (~12 RPM)
   google_model: gemma-4-31b-it
+  google_thinking_level: MINIMAL
   google_rpm_limit: 12
 
 execution:

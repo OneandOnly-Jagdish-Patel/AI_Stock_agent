@@ -12,6 +12,7 @@ from src.llm.ollama_client import (
     OllamaClient,
     PremarketBriefing,
     ScreenerRanking,
+    SwingReviewDecision,
     TradeVetoDecision,
     WatchlistRanking,
 )
@@ -171,6 +172,39 @@ class LLMRouter:
             return (
                 ExitAdvisorDecision(
                     action="sell",
+                    confidence=decision.confidence,
+                    reason=f"low_confidence: {decision.reason}",
+                ),
+                source,
+            )
+        return decision, source
+
+    async def swing_review(self, context: dict) -> tuple[SwingReviewDecision, str]:
+        """Fail-safe: exit if LLM unavailable."""
+        exit_default = SwingReviewDecision(action="exit", confidence=0.0, reason="llm_unavailable_fail_safe")
+
+        if not self.config.enabled:
+            return exit_default, "none"
+
+        if self._ollama_healthy is None and self._primary != "google":
+            await self.check_health()
+
+        result, source = await self._first_result(
+            {
+                "google": lambda: self.google.swing_review(context),
+                "ollama": lambda: self.ollama.swing_review(context),
+                "openclaw": lambda: self.openclaw.swing_review(context),
+            }
+        )
+        if result is None:
+            logger.info("LLM swing_review unavailable — fail-safe exit")
+            return exit_default, "fail_safe"
+
+        decision = result  # type: ignore[assignment]
+        if decision.confidence < self.config.confidence_threshold:
+            return (
+                SwingReviewDecision(
+                    action="exit",
                     confidence=decision.confidence,
                     reason=f"low_confidence: {decision.reason}",
                 ),

@@ -6,6 +6,8 @@ symbols:
   - NVDA
 
 strategy:
+  # Mode: scalper (intraday 0.20% targets) or swing (multi-day 2-3% targets)
+  mode: scalper
   rsi_period: 14
   rsi_oversold: 35
   rsi_overbought: 65
@@ -15,10 +17,36 @@ strategy:
   stop_loss_pct: 0.12
   trailing_stop_pct: 0.10
 
+# Swing trading mode settings (active when strategy.mode = swing)
+swing:
+  # Profit and loss targets (all %)
+  take_profit_pct: 2.5          # AI may recommend hold past this
+  stop_loss_pct: 1.0            # Dynamic stop (AI can tighten)
+  hard_stop_pct: 1.5            # Absolute floor, never overridden
+  trailing_stop_pct: 0.5        # Trail from recent high
+  profit_lock_pct: 0.8          # Start trailing once up this much
+  # Hold duration
+  max_hold_days: 5              # Force exit after 5 calendar days
+  min_hold_hours: 4.0           # Min hold — avoids same-day close (PDT safe)
+  # Entry signals (momentum-based, not mean-reversion)
+  entry_min_gap_pct: 0.3        # Must be up >= 0.3% from prev close
+  entry_max_gap_pct: 8.0        # Avoid gap-and-crap stocks
+  entry_min_volume_ratio: 1.5
+  entry_ema_fast: 10
+  entry_ema_slow: 20
+  entry_max_rsi: 72.0
+  # Session behaviour
+  flatten_on_close: false       # false = hold overnight (swing style)
+  morning_review_time: "09:15"  # AI reviews open positions before open
+  session_end_time: "16:00"     # Trade until regular close
+  # Sizing
+  max_open_positions: 3
+  max_risk_per_trade_pct: 1.5
+
 session:
   timezone: America/New_York
   start_time: "09:30"
-  end_time: "11:30"
+  end_time: "11:30"           # scalper only; swing uses swing.session_end_time
 
 risk:
   max_risk_per_trade_pct: 1.0

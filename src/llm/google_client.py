@@ -15,6 +15,7 @@ from src.llm.ollama_client import (
     OllamaClient,
     PremarketBriefing,
     ScreenerRanking,
+    SwingReviewDecision,
     TradeVetoDecision,
     WatchlistRanking,
 )
@@ -22,6 +23,7 @@ from src.llm.prompts import (
     EXIT_ADVISOR_PROMPT,
     PREMARKET_BRIEFING_PROMPT,
     SCREENER_RANK_PROMPT,
+    SWING_REVIEW_PROMPT,
     TRADE_VETO_PROMPT,
     WATCHLIST_RANK_PROMPT,
 )
@@ -199,6 +201,24 @@ class GoogleClient:
                 logger.warning("Google screener_rank failed: %s: %s", type(e).__name__, e or "(no message)")
                 return None
         return None
+
+    async def swing_review(self, context: dict) -> SwingReviewDecision | None:
+        swing = context.get("_swing_limits", {})
+        prompt = SWING_REVIEW_PROMPT.format(
+            days_held=context.get("days_held", 0),
+            context=json.dumps({k: v for k, v in context.items() if not k.startswith("_")}, indent=2),
+            take_profit_pct=swing.get("take_profit_pct", 2.5),
+            trail_stop_pct=swing.get("trailing_stop_pct", 0.5),
+            hard_stop_pct=swing.get("hard_stop_pct", 1.5),
+            max_hold_days=swing.get("max_hold_days", 5),
+        )
+        try:
+            raw = await self._generate(prompt)
+            parsed = OllamaClient._extract_json(raw)
+            return SwingReviewDecision.model_validate(parsed)
+        except Exception as e:
+            logger.warning("Google swing_review failed: %s: %s", type(e).__name__, e or "(no message)")
+            return None
 
     async def exit_advisor(self, context: dict) -> ExitAdvisorDecision | None:
         ai_exit = context.get("_ai_exit_limits", {})

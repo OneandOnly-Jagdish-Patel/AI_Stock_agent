@@ -15,6 +15,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 @dataclass
 class StrategyConfig:
+    mode: str = "scalper"  # scalper | swing
     rsi_period: int = 14
     rsi_oversold: float = 35
     rsi_overbought: float = 65
@@ -23,6 +24,34 @@ class StrategyConfig:
     take_profit_pct: float = 0.20
     stop_loss_pct: float = 0.12
     trailing_stop_pct: float = 0.10
+
+
+@dataclass
+class SwingConfig:
+    """Parameters for the multi-day swing trading mode."""
+    # Targets and stops (all in %)
+    take_profit_pct: float = 2.5       # AI review decides whether to hold past this
+    stop_loss_pct: float = 1.0         # Regular stop
+    hard_stop_pct: float = 1.5         # Absolute floor, never overridden by AI
+    trailing_stop_pct: float = 0.5     # Trail from recent high (activates after profit_lock_pct)
+    profit_lock_pct: float = 0.8       # Start trailing once up this much
+    # Hold duration
+    max_hold_days: int = 5             # Force exit after this many calendar days
+    min_hold_hours: float = 4.0        # Minimum hold before AI exit allowed (intraday filter)
+    # Entry signals
+    entry_min_gap_pct: float = 0.3     # Min gap from previous close to confirm momentum
+    entry_max_gap_pct: float = 8.0     # Avoid parabolic gaps (gap-and-crap risk)
+    entry_min_volume_ratio: float = 1.5
+    entry_ema_fast: int = 10
+    entry_ema_slow: int = 20
+    entry_max_rsi: float = 72.0        # Don't chase overbought
+    # Session behaviour
+    flatten_on_close: bool = False     # True = scalper style; False = hold overnight
+    morning_review_time: str = "09:15" # AI reviews open positions before regular open
+    session_end_time: str = "16:00"    # Trade until market close
+    # Sizing
+    max_open_positions: int = 3
+    max_risk_per_trade_pct: float = 1.5
 
 
 @dataclass
@@ -129,6 +158,7 @@ class LLMConfig:
 class AppConfig:
     symbols: list[str] = field(default_factory=lambda: ["AAPL", "MSFT", "SPY"])
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    swing: SwingConfig = field(default_factory=SwingConfig)
     session: SessionConfig = field(default_factory=SessionConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
@@ -153,6 +183,7 @@ def load_config(path: Path | None = None) -> AppConfig:
             raw = yaml.safe_load(f) or {}
 
     strategy_raw = raw.get("strategy", {})
+    swing_raw = raw.get("swing", {})
     session_raw = raw.get("session", {})
     risk_raw = raw.get("risk", {})
     execution_raw = raw.get("execution", {})
@@ -197,6 +228,7 @@ def load_config(path: Path | None = None) -> AppConfig:
     return AppConfig(
         symbols=raw.get("symbols", ["AAPL", "MSFT", "SPY"]),
         strategy=strategy,
+        swing=SwingConfig(**{k: swing_raw[k] for k in SwingConfig.__dataclass_fields__ if k in swing_raw}),
         session=SessionConfig(**{k: session_raw[k] for k in SessionConfig.__dataclass_fields__ if k in session_raw}),
         risk=RiskConfig(**{k: risk_raw[k] for k in RiskConfig.__dataclass_fields__ if k in risk_raw}),
         execution=ExecutionConfig(**{k: execution_raw[k] for k in ExecutionConfig.__dataclass_fields__ if k in execution_raw}),

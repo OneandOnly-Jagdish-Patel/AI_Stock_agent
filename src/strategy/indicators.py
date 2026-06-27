@@ -1,4 +1,4 @@
-"""Technical indicators for scalping signals."""
+"""Technical indicators for scalping and swing signals."""
 
 from __future__ import annotations
 
@@ -36,9 +36,10 @@ class Quote:
 
 @dataclass
 class IndicatorState:
-    bars: deque[Bar] = field(default_factory=lambda: deque(maxlen=200))
+    bars: deque[Bar] = field(default_factory=lambda: deque(maxlen=400))
     cumulative_pv: float = 0.0
     cumulative_volume: float = 0.0
+    prev_day_close: float = 0.0  # set by BarManager after warmup
 
     def add_bar(self, bar: Bar) -> None:
         self.bars.append(bar)
@@ -72,6 +73,33 @@ class IndicatorState:
         rs = avg_gain / avg_loss
         return 100 - (100 / (1 + rs))
 
+    def ema(self, period: int) -> float | None:
+        """Exponential moving average over the last `period` bars."""
+        bars = list(self.bars)
+        if len(bars) < period:
+            return None
+        closes = [b.close for b in bars]
+        k = 2.0 / (period + 1)
+        ema_val = sum(closes[:period]) / period
+        for price in closes[period:]:
+            ema_val = price * k + ema_val * (1 - k)
+        return ema_val
+
+    def atr(self, period: int = 14) -> float | None:
+        """Average True Range — measures volatility."""
+        bars = list(self.bars)
+        if len(bars) < period + 1:
+            return None
+        true_ranges: list[float] = []
+        for i in range(1, len(bars)):
+            high = bars[i].high
+            low = bars[i].low
+            prev_close = bars[i - 1].close
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+            true_ranges.append(tr)
+        recent_trs = true_ranges[-period:]
+        return sum(recent_trs) / len(recent_trs)
+
     def avg_volume(self, lookback: int = 20) -> float | None:
         if len(self.bars) < lookback:
             return None
@@ -83,9 +111,21 @@ class IndicatorState:
             return None
         return self.bars[-1].close
 
+    def latest_high(self) -> float | None:
+        if not self.bars:
+            return None
+        return self.bars[-1].high
+
     def vwap_deviation_pct(self) -> float | None:
         vwap = self.vwap()
         close = self.latest_close()
         if vwap is None or close is None or vwap == 0:
             return None
         return ((close - vwap) / vwap) * 100
+
+    def gap_pct_from_prev_close(self) -> float | None:
+        """Gap of current price vs previous day close (requires prev_day_close set)."""
+        close = self.latest_close()
+        if not close or not self.prev_day_close:
+            return None
+        return ((close - self.prev_day_close) / self.prev_day_close) * 100

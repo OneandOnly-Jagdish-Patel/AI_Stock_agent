@@ -26,6 +26,7 @@ from src.llm.router import LLMRouter
 from src.risk.manager import RiskManager
 from src.screener.daily import build_daily_watchlist
 from src.strategy.scalper import SymbolScalper
+from src.strategy.swing_scalper import SwingScalper
 
 _log_dir = Path(__file__).resolve().parent.parent / "logs"
 _log_dir.mkdir(parents=True, exist_ok=True)
@@ -50,7 +51,7 @@ class TradingAgent:
         self.risk = RiskManager(config, self.positions)
         self.llm = LLMRouter(config.llm)
         self.bar_manager = BarManager(config)
-        self.scalpers: dict[str, SymbolScalper] = {}
+        self.scalpers: dict[str, SymbolScalper | SwingScalper] = {}
         self.active_symbols: list[str] = list(config.symbols)
         self.avoided_symbols: set[str] = set()
         self._stream: MarketDataStream | None = None
@@ -61,7 +62,13 @@ class TradingAgent:
         self._session_task: asyncio.Task | None = None
         self._stream_task: asyncio.Task | None = None
         self._trade_stream_task: asyncio.Task | None = None
+        self._morning_review_task: asyncio.Task | None = None
         self._session_closed_date: str | None = None
+        self._morning_reviewed_date: str | None = None
+
+    @property
+    def _is_swing(self) -> bool:
+        return self.config.strategy.mode == "swing"
 
     def _in_trading_session(self) -> bool:
         tz = pytz.timezone(self.config.session.timezone)
@@ -69,7 +76,11 @@ class TradingAgent:
         if now.weekday() >= 5:
             return False
         start_h, start_m = map(int, self.config.session.start_time.split(":"))
-        end_h, end_m = map(int, self.config.session.end_time.split(":"))
+        if self._is_swing:
+            end_time = self.config.swing.session_end_time
+        else:
+            end_time = self.config.session.end_time
+        end_h, end_m = map(int, end_time.split(":"))
         start = now.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
         end = now.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
         return start <= now <= end
@@ -160,19 +171,59 @@ class TradingAgent:
         if scalper:
             await scalper.on_order_update(event, order_data)
 
+    async def _morning_review_loop(self) -> None:
+        """Swing mode: review every open position at 09:15 ET each day."""
+        tz = pytz.timezone(self.config.session.timezone)
+        review_time = self.config.swing.morning_review_time
+
+        while self._running:
+            await asyncio.sleep(60)
+            now = datetime.now(tz)
+            if now.weekday() >= 5:
+                continue
+            today = now.date().isoformat()
+            if today == self._morning_reviewed_date:
+                continue
+
+            review_h, review_m = map(int, review_time.split(":"))
+            review_dt = now.replace(hour=review_h, minute=review_m, second=0, microsecond=0)
+            if now < review_dt:
+                continue
+
+            self._morning_reviewed_date = today
+            logger.info("Running morning swing review for all open positions")
+
+            for symbol, scalper in self.scalpers.items():
+                if not isinstance(scalper, SwingScalper):
+                    continue
+                scalper.reset_morning_review_flag()
+                state = self.bar_manager.states.get(symbol)
+                if state:
+                    await scalper.morning_review(state)
+
     async def _session_guard_loop(self) -> None:
         tz = pytz.timezone(self.config.session.timezone)
         while self._running:
             await asyncio.sleep(30)
             now = datetime.now(tz)
             today = now.date().isoformat()
-            end_h, end_m = map(int, self.config.session.end_time.split(":"))
+
+            if self._is_swing:
+                # Swing mode: close of regular session is 16:00 — just record P&L, DON'T flatten
+                end_h, end_m = map(int, self.config.swing.session_end_time.split(":"))
+            else:
+                end_h, end_m = map(int, self.config.session.end_time.split(":"))
+
             end = now.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
 
             if now > end and today != self._session_closed_date:
                 self._session_closed_date = today
-                logger.info("Session ended — flattening positions")
-                self.positions.flatten_all()
+                if self._is_swing:
+                    logger.info("Market closed — recording daily P&L (swing positions carried overnight)")
+                else:
+                    logger.info("Session ended — flattening positions")
+                    self.positions.flatten_all()
+
                 equity = self.executor.get_equity()
                 trades = self.journal.get_today_trades(today)
                 wins = sum(1 for t in trades if t.get("pnl") and t["pnl"] > 0)
@@ -219,6 +270,7 @@ class TradingAgent:
                 self._session_task,
                 self._stream_task,
                 self._trade_stream_task,
+                self._morning_review_task,
             )
             if t and not t.done() and t is not current
         ]
@@ -234,8 +286,12 @@ class TradingAgent:
                 await asyncio.gather(*pending, return_exceptions=True)
 
         if self.risk.is_killed():
+            # In swing mode, flatten all — kill switch overrides overnight holds
             self.positions.flatten_all()
             await self.llm.alert("Kill Switch", self.risk.state.kill_reason)
+        elif not self._is_swing:
+            # Scalper mode: always flatten on stop to avoid surprise overnight exposure
+            self.positions.flatten_all()
 
         logger.info("Agent stopped")
 
@@ -271,8 +327,11 @@ class TradingAgent:
 
         self._stream = MarketDataStream(self.config, self.active_symbols, on_bar=self._on_bar)
         self._trade_stream = OrderUpdateStream(self.config, on_update=self._on_order_update)
+
+        ScalperClass = SwingScalper if self._is_swing else SymbolScalper
+        mode_label = "swing" if self._is_swing else "scalper"
         for symbol in self.active_symbols:
-            self.scalpers[symbol] = SymbolScalper(
+            self.scalpers[symbol] = ScalperClass(
                 symbol,
                 self.config,
                 self.executor,
@@ -288,9 +347,19 @@ class TradingAgent:
         self._stream_task = asyncio.create_task(self._stream.run())
         self._trade_stream_task = asyncio.create_task(self._trade_stream.run())
 
+        if self._is_swing:
+            self._morning_review_task = asyncio.create_task(self._morning_review_loop())
+            logger.info(
+                "Swing mode active — target %.1f%%, stop %.1f%%, hard_stop %.1f%%, max_hold %dd",
+                self.config.swing.take_profit_pct,
+                self.config.swing.stop_loss_pct,
+                self.config.swing.hard_stop_pct,
+                self.config.swing.max_hold_days,
+            )
+
         await self.llm.alert(
             "Agent Started",
-            f"Paper trading agent started. Symbols: {', '.join(self.active_symbols)}",
+            f"Trading agent started [{mode_label}]. Symbols: {', '.join(self.active_symbols)}",
         )
 
         try:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
@@ -55,10 +55,12 @@ class BarManager:
             logger.exception("Failed to fetch historical bars for warmup")
             return
 
+        today = date.today()
         for symbol in target:
             if symbol not in bars.data:
                 continue
             state = self.states.setdefault(symbol, IndicatorState())
+            prev_day_close: float = 0.0
             for b in bars.data[symbol]:
                 bar = Bar(
                     timestamp=str(b.timestamp),
@@ -68,8 +70,19 @@ class BarManager:
                     close=float(b.close),
                     volume=float(b.volume),
                 )
+                # Track the last bar from any day before today as prev_day_close
+                bar_date = b.timestamp.date() if hasattr(b.timestamp, "date") else today
+                if bar_date < today:
+                    prev_day_close = float(b.close)
                 state.add_bar(bar)
-            logger.info("Warmed up %s with %d bars", symbol, len(state.bars))
+            if prev_day_close > 0:
+                state.prev_day_close = prev_day_close
+            logger.info(
+                "Warmed up %s with %d bars (prev_day_close=%.2f)",
+                symbol,
+                len(state.bars),
+                state.prev_day_close,
+            )
 
     def on_bar(self, symbol: str, bar_data: dict) -> IndicatorState:
         bar = Bar(

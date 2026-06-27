@@ -59,6 +59,25 @@ Candidates:
 Respond exactly:
 {{"picks": ["SYM1", "SYM2", "SYM3"], "reasons": {{"SYM1": "brief reason"}}, "summary": "one line"}}"""
 
+SWING_REVIEW_PROMPT = """You are an intelligent swing trade position reviewer. A position has been held for {days_held} day(s).
+Your job: decide whether to hold for more upside, exit now to lock profit/cut loss, or tighten the stop to protect gains.
+Respond with JSON only, no other text.
+
+Position context:
+{context}
+
+Rules:
+- "hold": strong momentum, trend intact, catalyst still active — reasonable chance of reaching {take_profit_pct}%+ target
+- "exit": trend weakening, catalyst faded, RSI overbought/oversold without bounce, or max hold risk near
+- "trail": momentum slowing but still positive — tighten stop to {trail_stop_pct}% below current high to lock profit
+- NEVER recommend hold if pnl_pct <= -{hard_stop_pct}% (hard stop floor)
+- If days_held >= {max_hold_days} - 1, prefer "exit" unless strong momentum
+- For profitable trades: prefer "trail" over "hold" once pnl_pct > 1%
+
+Respond exactly:
+{{"action": "hold" | "exit" | "trail", "confidence": 0.0-1.0, "new_stop_pct": null_or_float, "reason": "brief reason"}}
+(new_stop_pct: tighter stop distance from current high in %, only set when action="trail")"""
+
 EXIT_ADVISOR_PROMPT = """You are an intraday scalping exit advisor. A position is open; decide whether to sell now or hold for a target.
 Respond with JSON only, no other text.
 

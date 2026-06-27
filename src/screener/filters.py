@@ -51,6 +51,8 @@ def apply_filters(
     earnings_today = _fetch_earnings_today(config)
     losers = _yesterday_losers(journal) if journal and sc.exclude_yesterday_losers else set()
 
+    is_swing = config.strategy.mode == "swing"
+
     filtered: list[Candidate] = []
     for c in candidates:
         sym = c.symbol.upper()
@@ -68,6 +70,21 @@ def apply_filters(
         if sym in losers:
             logger.debug("Filtered %s: yesterday loser", sym)
             continue
+
+        if is_swing:
+            # Swing mode: require positive momentum (no weak/flat movers)
+            if c.percent_change < config.swing.entry_min_gap_pct:
+                logger.debug("Filtered %s (swing): percent_change %.2f < min_gap %.2f", sym, c.percent_change, config.swing.entry_min_gap_pct)
+                continue
+            # Avoid parabolic gap-and-crap risk
+            if c.percent_change > config.swing.entry_max_gap_pct:
+                logger.debug("Filtered %s (swing): gap %.2f > max_gap %.2f", sym, c.percent_change, config.swing.entry_max_gap_pct)
+                continue
+
         filtered.append(c)
+
+    # In swing mode, sort by positive momentum strength (best movers first)
+    if is_swing:
+        filtered.sort(key=lambda c: c.percent_change, reverse=True)
 
     return filtered

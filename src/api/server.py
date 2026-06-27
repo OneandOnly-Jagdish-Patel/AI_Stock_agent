@@ -92,6 +92,8 @@ def _sanitize_config() -> dict[str, Any]:
         "session": _config.session.__dict__,
         "effective_session_end": _effective_session_end(),
         "display_llm": _display_llm(),
+        "timezone": _config.session.timezone,
+        "timezone_label": "CST",
         "risk": _config.risk.__dict__,
         "execution": _config.execution.__dict__,
         "briefing": _config.briefing.__dict__,

@@ -27,13 +27,13 @@ cd "$APP_DIR"
 echo "==> Restart dashboard"
 sudo systemctl restart "trading-dashboard@${USER_NAME}.service"
 
-# Skip agent restart during market session (9:30–11:30 AM ET)
-TZ=America/New_York
+# Skip agent restart during market session (8:30 AM–3:00 PM CST, swing hours)
+TZ=America/Chicago
 HOUR=$(date +%H)
 MIN=$(date +%M)
 NOW_MINS=$((10#$HOUR * 60 + 10#$MIN))
-START=$((9 * 60 + 30))
-END=$((11 * 60 + 30))
+START=$((8 * 60 + 30))
+END=$((15 * 60 + 0))
 
 if [ "$NOW_MINS" -ge "$START" ] && [ "$NOW_MINS" -le "$END" ]; then
   echo "==> Market session active — skipping agent restart"

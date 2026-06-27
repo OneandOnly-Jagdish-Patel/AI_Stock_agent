@@ -8,7 +8,7 @@ Type=simple
 User=%i
 WorkingDirectory=/home/%i/AI_Stock_portfolio
 Environment=PYTHONUNBUFFERED=1
-Environment=TZ=America/New_York
+Environment=TZ=America/Chicago
 ExecStart=/home/%i/AI_Stock_portfolio/.venv/bin/python -m src.main
 Restart=on-failure
 RestartSec=30

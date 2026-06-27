@@ -57,7 +57,7 @@ export function ScreenerPage() {
             <div className="panel-body">
               {entries.length === 0 ? (
                 <div className="empty">
-                  No screener run for this date. Agent runs screener at 8:45 AM ET.
+                  No screener run for this date. Agent runs screener at 7:45 AM CST.
                 </div>
               ) : (
                 entries.map((e) => (

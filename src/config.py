@@ -47,8 +47,8 @@ class SwingConfig:
     entry_max_rsi: float = 72.0        # Don't chase overbought
     # Session behaviour
     flatten_on_close: bool = False     # True = scalper style; False = hold overnight
-    morning_review_time: str = "09:15" # AI reviews open positions before regular open
-    session_end_time: str = "16:00"    # Trade until market close
+    morning_review_time: str = "08:15"  # AI reviews open positions before regular open (CST)
+    session_end_time: str = "15:00"     # Trade until market close (CST)
     # Sizing
     max_open_positions: int = 3
     max_risk_per_trade_pct: float = 1.5
@@ -56,9 +56,9 @@ class SwingConfig:
 
 @dataclass
 class SessionConfig:
-    timezone: str = "America/New_York"
-    start_time: str = "09:30"
-    end_time: str = "11:30"
+    timezone: str = "America/Chicago"
+    start_time: str = "08:30"
+    end_time: str = "10:30"
 
 
 @dataclass

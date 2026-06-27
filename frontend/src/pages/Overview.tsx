@@ -12,14 +12,14 @@ import { api } from "../api/client";
 import { DateFilter } from "../components/DateFilter";
 import { StatCard } from "../components/StatCard";
 import type { Overview } from "../types";
-import { fmtMoney, fmtPct, fmtPctNum } from "../utils/format";
+import { fmtMoney, fmtPct, fmtPctNum, DISPLAY_TZ_LABEL } from "../utils/format";
 
 function marketBanner(status: string) {
   switch (status) {
     case "weekend":
       return "Market closed (weekend) — showing account balance and recent activity.";
     case "pre_market":
-      return "Pre-market — session opens at 9:30 AM ET.";
+      return "Pre-market — session opens at 8:30 AM CST.";
     case "closed":
       return "Market closed for today — showing account balance and recent activity.";
     default:
@@ -344,7 +344,7 @@ export function OverviewPage() {
             <div>
               <dt>Session</dt>
               <dd>
-                {session?.start_time}–{sessionEnd} ET
+                {session?.start_time}–{sessionEnd} {DISPLAY_TZ_LABEL}
               </dd>
             </div>
             <div>

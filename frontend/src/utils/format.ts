@@ -1,5 +1,29 @@
+/** Display timezone for all dashboard timestamps and labels. */
+export const DISPLAY_TZ = "America/Chicago";
+export const DISPLAY_TZ_LABEL = "CST";
+
 function fmtTs(ts: string) {
-  return ts.replace("T", " ").slice(0, 19);
+  if (!ts) return "—";
+  const normalized =
+    ts.includes("Z") || ts.includes("+") || ts.includes("-", 10)
+      ? ts
+      : `${ts}Z`;
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) {
+    return ts.replace("T", " ").slice(0, 19);
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: DISPLAY_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+    .format(d)
+    .replace(",", "");
 }
 
 function fmtMoney(n: number | null | undefined) {

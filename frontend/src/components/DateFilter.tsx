@@ -14,7 +14,7 @@ export function DateFilter({ value, onChange }: Props) {
 
   return (
     <div className="date-picker">
-      <label htmlFor="date-filter">Date (ET)</label>
+      <label htmlFor="date-filter">Date (CST)</label>
       <input
         id="date-filter"
         type="date"

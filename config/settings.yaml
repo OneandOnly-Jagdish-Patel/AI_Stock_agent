@@ -37,16 +37,16 @@ swing:
   entry_max_rsi: 72.0
   # Session behaviour
   flatten_on_close: false       # false = hold overnight (swing style)
-  morning_review_time: "09:15"  # AI reviews open positions before open
-  session_end_time: "16:00"     # Trade until regular close
+  morning_review_time: "08:15"  # AI reviews open positions before open (CST)
+  session_end_time: "15:00"     # Trade until regular close (3:00 PM CST = 4:00 PM ET)
   # Sizing
   max_open_positions: 3
   max_risk_per_trade_pct: 1.5
 
 session:
-  timezone: America/New_York
-  start_time: "09:30"
-  end_time: "11:30"           # scalper only; swing uses swing.session_end_time
+  timezone: America/Chicago
+  start_time: "08:30"         # 8:30 AM CST = 9:30 AM ET market open
+  end_time: "10:30"           # scalper only; swing uses swing.session_end_time
 
 risk:
   max_risk_per_trade_pct: 1.0
@@ -83,7 +83,7 @@ ai_exit:
 
 briefing:
   enabled: true
-  time: "09:00"
+  time: "08:00"               # 8:00 AM CST = 9:00 AM ET
   news_lookback_hours: 24
   news_limit: 10
 
@@ -101,7 +101,7 @@ screener:
     - SPY
     - QQQ
   dynamic_slots: 3
-  run_time: "08:45"
+  run_time: "07:45"           # 7:45 AM CST = 8:45 AM ET
   candidate_pool_size: 30
   min_price: 15.0
   max_price: 500.0

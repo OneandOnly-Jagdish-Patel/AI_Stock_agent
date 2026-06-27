@@ -94,7 +94,7 @@ class TradingAgent:
         target = now.replace(hour=h, minute=m, second=0, microsecond=0)
         if now < target:
             wait_secs = (target - now).total_seconds()
-            logger.info("Waiting %.0f seconds until %s ET", wait_secs, time_str)
+            logger.info("Waiting %.0f seconds until %s CST", wait_secs, time_str)
             await asyncio.sleep(wait_secs)
 
     async def _run_screener(self) -> None:
@@ -172,7 +172,7 @@ class TradingAgent:
             await scalper.on_order_update(event, order_data)
 
     async def _morning_review_loop(self) -> None:
-        """Swing mode: review every open position at 09:15 ET each day."""
+        """Swing mode: review every open position at morning_review_time each day."""
         tz = pytz.timezone(self.config.session.timezone)
         review_time = self.config.swing.morning_review_time
 

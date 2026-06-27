@@ -7,7 +7,7 @@ symbols:
 
 strategy:
   # Mode: scalper (intraday 0.20% targets) or swing (multi-day 2-3% targets)
-  mode: scalper
+  mode: swing
   rsi_period: 14
   rsi_oversold: 35
   rsi_overbought: 65

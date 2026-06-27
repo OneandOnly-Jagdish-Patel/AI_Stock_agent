@@ -18,6 +18,39 @@ export interface Stats {
   exit_signals: number;
 }
 
+export interface LifetimeStats {
+  total_pnl: number;
+  trade_count: number;
+  win_count: number;
+  loss_count: number;
+  win_rate: number;
+}
+
+export interface AccountSnapshot {
+  available?: boolean;
+  equity?: number;
+  buying_power?: number;
+  cash?: number;
+  portfolio_value?: number;
+  last_equity?: number;
+  previous_balance?: number | null;
+  change?: number | null;
+  change_pct?: number | null;
+}
+
+export interface Position {
+  symbol: string;
+  qty: number;
+  side: string;
+  avg_entry_price: number;
+  current_price: number;
+  market_value: number;
+  cost_basis: number;
+  unrealized_pl: number;
+  unrealized_plpc: number;
+  portfolio_pct?: number | null;
+}
+
 export interface WatchlistEntry {
   date: string;
   symbol: string;
@@ -82,14 +115,33 @@ export interface Overview {
   date: string;
   summary: DailySummary | null;
   stats: Stats;
+  display_pnl?: number;
   watchlist: WatchlistEntry[];
   config: Record<string, unknown>;
+  account: AccountSnapshot | null;
+  positions: Position[];
+  lifetime_stats: LifetimeStats;
+  market_status: string;
+  daily_pnl_history: DailySummary[];
+  last_trade_date: string | null;
+}
+
+export interface PortfolioSnapshot {
+  account: AccountSnapshot | null;
+  positions: Position[];
+  daily_pnl: DailySummary[];
+  lifetime_stats: LifetimeStats;
+  market_status: string;
+  today: string;
 }
 
 export interface AppConfig {
   symbols: string[];
-  strategy: Record<string, number>;
+  strategy: Record<string, unknown>;
+  swing?: Record<string, unknown>;
   session: Record<string, string>;
+  effective_session_end?: string;
+  display_llm?: string;
   risk: Record<string, number>;
   execution: Record<string, unknown>;
   briefing: Record<string, unknown>;

@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import { api } from "../api/client";
+import { fmtMoney } from "../utils/format";
 
 const links = [
   { to: "/", label: "Overview" },
@@ -11,12 +14,26 @@ const links = [
 ];
 
 export function Layout() {
+  const [equity, setEquity] = useState<number | null>(null);
+
+  useEffect(() => {
+    api
+      .account()
+      .then((a) => setEquity(a.equity ?? null))
+      .catch(() => setEquity(null));
+  }, []);
+
   return (
     <div className="layout">
       <aside className="sidebar">
         <div className="brand">
           <h1>AI Trading Agent</h1>
           <p>Paper trading dashboard</p>
+          {equity != null && (
+            <p className="mono" style={{ marginTop: "0.5rem", color: "var(--green)" }}>
+              {fmtMoney(equity)}
+            </p>
+          )}
         </div>
         <nav>
           {links.map((l) => (

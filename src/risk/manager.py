@@ -30,14 +30,29 @@ class RiskManager:
         self.positions = positions
         self.state = RiskState()
 
-    def reset_session(self, equity: float, today: date) -> None:
+    def reset_session(
+        self,
+        equity: float,
+        today: date,
+        starting_equity: float | None = None,
+    ) -> None:
+        day_start = starting_equity if starting_equity is not None else equity
         if self.state.session_date != today:
             self.state = RiskState(
-                starting_equity=equity,
+                starting_equity=day_start,
                 current_equity=equity,
                 session_date=today,
             )
-            logger.info("Risk session reset: equity=%.2f date=%s", equity, today)
+            logger.info(
+                "Risk session reset: equity=%.2f starting=%.2f date=%s",
+                equity,
+                day_start,
+                today,
+            )
+        else:
+            self.state.current_equity = equity
+            if starting_equity is not None:
+                self.state.starting_equity = day_start
 
     def update_equity(self, equity: float) -> None:
         self.state.current_equity = equity

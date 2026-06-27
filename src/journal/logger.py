@@ -151,6 +151,33 @@ class TradeJournal:
                 (self._now(), event_type, message),
             )
 
+    def ensure_day_starting_equity(self, date: str, equity: float) -> float:
+        """Record starting equity once per day; return persisted value on restarts."""
+        existing = self.get_daily_summary(date)
+        if existing and existing.get("starting_equity") is not None:
+            return float(existing["starting_equity"])
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO daily_pnl (date, starting_equity, ending_equity, net_pnl, trade_count, win_count)
+                   VALUES (?, ?, ?, 0, 0, 0)
+                   ON CONFLICT(date) DO NOTHING""",
+                (date, equity, equity),
+            )
+        row = self.get_daily_summary(date)
+        return float(row["starting_equity"]) if row else equity
+
+    def compute_trade_stats_for_date(self, date: str) -> dict[str, Any]:
+        """Aggregate realized P&L from sell fills for a calendar date (YYYY-MM-DD)."""
+        trades = self.get_today_trades(date)
+        sells = [t for t in trades if t["side"] == "sell" and t.get("pnl") is not None]
+        wins = sum(1 for t in sells if t["pnl"] > 0)
+        net_pnl = sum(t["pnl"] for t in sells)
+        return {
+            "net_pnl": round(net_pnl, 2),
+            "trade_count": len(sells),
+            "win_count": wins,
+        }
+
     def upsert_daily_pnl(
         self,
         date: str,
@@ -158,19 +185,66 @@ class TradeJournal:
         ending_equity: float,
         trade_count: int,
         win_count: int,
+        net_pnl: float | None = None,
     ) -> None:
-        net_pnl = ending_equity - starting_equity
+        if net_pnl is None:
+            net_pnl = ending_equity - starting_equity
         with self._connect() as conn:
             conn.execute(
                 """INSERT INTO daily_pnl (date, starting_equity, ending_equity, net_pnl, trade_count, win_count)
                    VALUES (?, ?, ?, ?, ?, ?)
                    ON CONFLICT(date) DO UPDATE SET
+                     starting_equity=excluded.starting_equity,
                      ending_equity=excluded.ending_equity,
                      net_pnl=excluded.net_pnl,
                      trade_count=excluded.trade_count,
                      win_count=excluded.win_count""",
                 (date, starting_equity, ending_equity, net_pnl, trade_count, win_count),
             )
+
+    def backfill_daily_pnl(self) -> int:
+        """Recompute net_pnl and trade counts from trades table for all daily_pnl rows."""
+        with self._connect() as conn:
+            dates = [r["date"] for r in conn.execute("SELECT date FROM daily_pnl ORDER BY date").fetchall()]
+        updated = 0
+        for d in dates:
+            stats = self.compute_trade_stats_for_date(d)
+            summary = self.get_daily_summary(d)
+            if not summary:
+                continue
+            self.upsert_daily_pnl(
+                d,
+                float(summary["starting_equity"]),
+                float(summary["ending_equity"]),
+                stats["trade_count"],
+                stats["win_count"],
+                net_pnl=stats["net_pnl"],
+            )
+            updated += 1
+        return updated
+
+    def get_lifetime_stats(self) -> dict[str, Any]:
+        """All-time realized P&L and win rate from sell trades."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT pnl FROM trades WHERE side = 'sell' AND pnl IS NOT NULL"
+            ).fetchall()
+        pnls = [float(r["pnl"]) for r in rows]
+        wins = sum(1 for p in pnls if p > 0)
+        return {
+            "total_pnl": round(sum(pnls), 2),
+            "trade_count": len(pnls),
+            "win_count": wins,
+            "loss_count": len(pnls) - wins,
+            "win_rate": round(wins / len(pnls), 3) if pnls else 0.0,
+        }
+
+    def get_last_trade_date(self) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT ts FROM trades ORDER BY ts DESC LIMIT 1").fetchone()
+        if not row:
+            return None
+        return str(row["ts"])[:10]
 
     def get_today_trades(self, date_prefix: str) -> list[dict[str, Any]]:
         with self._connect() as conn:

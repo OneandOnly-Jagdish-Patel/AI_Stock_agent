@@ -17,6 +17,8 @@ const EXIT_LABELS: Record<string, string> = {
   ai_exit_target_loss: "AI loss recovery target hit",
   ai_exit_timeout_profit: "AI profit hold timed out",
   ai_exit_timeout_loss: "AI loss hold timed out",
+  swing_entry_fill: "Swing entry filled",
+  ai_swing_exit_morning: "AI swing exit (morning review)",
 };
 
 function exitLabel(reason?: string) {
@@ -26,13 +28,26 @@ function exitLabel(reason?: string) {
 
 export function TradesPage() {
   const [date, setDate] = useState("");
+  const [dateInitialized, setDateInitialized] = useState(false);
   const [rounds, setRounds] = useState<RoundTrip[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"rounds" | "raw">("rounds");
 
+  useEffect(() => {
+    if (dateInitialized) return;
+    api
+      .lastTradeDate()
+      .then((last) => {
+        if (last) setDate(last);
+        setDateInitialized(true);
+      })
+      .catch(() => setDateInitialized(true));
+  }, [dateInitialized]);
+
   const load = useCallback(async () => {
+    if (!dateInitialized) return;
     setLoading(true);
     setError("");
     try {
@@ -47,7 +62,7 @@ export function TradesPage() {
     } finally {
       setLoading(false);
     }
-  }, [date]);
+  }, [date, dateInitialized]);
 
   useEffect(() => {
     load();

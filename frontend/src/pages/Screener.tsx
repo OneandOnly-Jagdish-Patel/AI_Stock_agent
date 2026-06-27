@@ -49,6 +49,9 @@ export function ScreenerPage() {
               Watchlist for {date}
               <span className="mono" style={{ fontWeight: 400, color: "var(--text-muted)" }}>
                 {entries.length} symbols
+                {entries.length > 0 &&
+                  entries.every((e) => e.source === "anchor") &&
+                  " (anchors only — no dynamic picks)"}
               </span>
             </div>
             <div className="panel-body">

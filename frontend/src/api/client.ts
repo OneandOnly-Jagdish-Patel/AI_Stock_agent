@@ -1,7 +1,10 @@
 import type {
+  AccountSnapshot,
   DailySummary,
   Event,
   Overview,
+  PortfolioSnapshot,
+  Position,
   RoundTrip,
   Signal,
   Trade,
@@ -17,6 +20,9 @@ async function get<T>(path: string): Promise<T> {
 export const api = {
   overview: (date?: string) =>
     get<Overview>(`/api/overview${date ? `?date=${date}` : ""}`),
+  account: () => get<AccountSnapshot>("/api/account"),
+  positions: () => get<{ positions: Position[]; count: number }>("/api/positions"),
+  portfolio: () => get<PortfolioSnapshot>("/api/portfolio"),
   trades: (params?: { date?: string; symbol?: string }) => {
     const q = new URLSearchParams();
     if (params?.date) q.set("date", params.date);
@@ -46,6 +52,11 @@ export const api = {
       `/api/watchlist${date ? `?date=${date}` : ""}`,
     ),
   watchlistDates: () => get<string[]>("/api/watchlist/dates"),
-  logs: (lines = 200) => get<{ lines: string[]; exists: boolean }>(`/api/logs?lines=${lines}`),
+  logs: (lines = 200) =>
+    get<{ lines: string[]; exists: boolean }>(`/api/logs?lines=${lines}`),
   config: () => get<Record<string, unknown>>("/api/config"),
+  lastTradeDate: async () => {
+    const o = await get<Overview>("/api/overview");
+    return o.last_trade_date;
+  },
 };

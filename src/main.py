@@ -225,20 +225,21 @@ class TradingAgent:
                     self.positions.flatten_all()
 
                 equity = self.executor.get_equity()
-                trades = self.journal.get_today_trades(today)
-                wins = sum(1 for t in trades if t.get("pnl") and t["pnl"] > 0)
+                trade_stats = self.journal.compute_trade_stats_for_date(today)
+                starting = self.risk.state.starting_equity
                 self.journal.upsert_daily_pnl(
                     today,
-                    self.risk.state.starting_equity,
+                    starting,
                     equity,
-                    len(trades),
-                    wins,
+                    trade_stats["trade_count"],
+                    trade_stats["win_count"],
+                    net_pnl=trade_stats["net_pnl"],
                 )
                 summary_ctx = {
                     "date": today,
                     "equity": equity,
-                    "trades": len(trades),
-                    "wins": wins,
+                    "trades": trade_stats["trade_count"],
+                    "wins": trade_stats["win_count"],
                 }
                 summary = await self.llm.openclaw.daily_summary(summary_ctx)
                 await self.llm.alert("Daily P&L Summary", summary)
@@ -304,7 +305,9 @@ class TradingAgent:
         equity = self.executor.get_equity()
         tz = pytz.timezone(self.config.session.timezone)
         today = datetime.now(tz).date()
-        self.risk.reset_session(equity, today)
+        today_str = today.isoformat()
+        starting_equity = self.journal.ensure_day_starting_equity(today_str, equity)
+        self.risk.reset_session(equity, today, starting_equity=starting_equity)
 
         logger.info("Account equity: $%.2f", equity)
         llm_ok = await self.llm.check_health()

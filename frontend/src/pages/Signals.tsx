@@ -9,6 +9,7 @@ const TYPES = [
   { value: "entry", label: "Entries (approved)" },
   { value: "entry_vetoed", label: "Entries vetoed" },
   { value: "exit_advisor", label: "AI exit advisor" },
+  { value: "swing_review", label: "Swing morning review" },
   { value: "exit", label: "Exits" },
 ];
 

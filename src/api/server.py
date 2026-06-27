@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections import deque
 from datetime import datetime
@@ -14,7 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.config import PROJECT_ROOT, load_config
+from src.execution.orders import OrderExecutor
+from src.execution.positions import PositionManager
 from src.journal.logger import TradeJournal
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Trading Agent Dashboard", version="1.0.0")
 
@@ -30,17 +35,63 @@ _config = load_config()
 _journal = TradeJournal(_config.journal_db_path)
 _log_path = PROJECT_ROOT / "logs" / "agent.log"
 
+# Recompute historical daily_pnl from trades on dashboard startup (idempotent).
+try:
+    _backfilled = _journal.backfill_daily_pnl()
+    if _backfilled:
+        logger.info("Backfilled %d daily_pnl row(s) on startup", _backfilled)
+except Exception:
+    logger.warning("daily_pnl backfill skipped", exc_info=True)
+
 
 def _today_et() -> str:
     tz = pytz.timezone(_config.session.timezone)
     return datetime.now(tz).date().isoformat()
 
 
+def _market_status() -> str:
+    tz = pytz.timezone(_config.session.timezone)
+    now = datetime.now(tz)
+    if now.weekday() >= 5:
+        return "weekend"
+    start_h, start_m = map(int, _config.session.start_time.split(":"))
+    if _config.strategy.mode == "swing":
+        end_time = _config.swing.session_end_time
+    else:
+        end_time = _config.session.end_time
+    end_h, end_m = map(int, end_time.split(":"))
+    start = now.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
+    end = now.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+    if now < start:
+        return "pre_market"
+    if now <= end:
+        return "open"
+    return "closed"
+
+
+def _display_llm() -> str:
+    provider = _config.llm.resolved_primary()
+    if provider == "google" and _config.llm.google_api_key:
+        return f"google / {_config.llm.google_model}"
+    if provider == "ollama":
+        return f"ollama / {_config.llm.ollama_model}"
+    return f"{provider} / {_config.llm.openclaw_model}"
+
+
+def _effective_session_end() -> str:
+    if _config.strategy.mode == "swing":
+        return _config.swing.session_end_time
+    return _config.session.end_time
+
+
 def _sanitize_config() -> dict[str, Any]:
     return {
         "symbols": _config.symbols,
         "strategy": _config.strategy.__dict__,
+        "swing": _config.swing.__dict__,
         "session": _config.session.__dict__,
+        "effective_session_end": _effective_session_end(),
+        "display_llm": _display_llm(),
         "risk": _config.risk.__dict__,
         "execution": _config.execution.__dict__,
         "briefing": _config.briefing.__dict__,
@@ -50,6 +101,7 @@ def _sanitize_config() -> dict[str, Any]:
         "llm": {
             "enabled": _config.llm.enabled,
             "primary_provider": _config.llm.resolved_primary(),
+            "display_llm": _display_llm(),
             "confidence_threshold": _config.llm.confidence_threshold,
             "timeout_seconds": _config.llm.timeout_seconds,
             "watchlist_interval_minutes": _config.llm.watchlist_interval_minutes,
@@ -69,9 +121,113 @@ def _sanitize_config() -> dict[str, Any]:
     }
 
 
+def _fetch_account() -> dict[str, Any] | None:
+    if not _config.alpaca_api_key or not _config.alpaca_secret_key:
+        return None
+    try:
+        account = OrderExecutor(_config).get_account()
+        return {
+            "equity": float(account.equity),
+            "buying_power": float(account.buying_power),
+            "cash": float(account.cash),
+            "portfolio_value": float(getattr(account, "portfolio_value", account.equity)),
+            "last_equity": float(getattr(account, "last_equity", account.equity)),
+        }
+    except Exception:
+        logger.warning("Failed to fetch Alpaca account", exc_info=True)
+        return None
+
+
+def _fetch_positions() -> list[dict[str, Any]]:
+    if not _config.alpaca_api_key or not _config.alpaca_secret_key:
+        return []
+    try:
+        raw = PositionManager(_config).list_positions()
+        result: list[dict[str, Any]] = []
+        for pos in raw:
+            result.append(
+                {
+                    "symbol": str(pos.symbol),
+                    "qty": float(pos.qty),
+                    "side": "long" if float(pos.qty) > 0 else "short",
+                    "avg_entry_price": float(pos.avg_entry_price),
+                    "current_price": float(pos.current_price),
+                    "market_value": float(pos.market_value),
+                    "cost_basis": float(pos.cost_basis),
+                    "unrealized_pl": float(pos.unrealized_pl),
+                    "unrealized_plpc": float(pos.unrealized_plpc) * 100,
+                }
+            )
+        return result
+    except Exception:
+        logger.warning("Failed to fetch Alpaca positions", exc_info=True)
+        return []
+
+
+def _previous_balance() -> float | None:
+    rows = _journal.list_daily_pnl(limit=2)
+    if not rows:
+        return None
+    today = _today_et()
+    for row in rows:
+        if row["date"] != today and row.get("ending_equity") is not None:
+            return float(row["ending_equity"])
+    if rows[0].get("starting_equity") is not None:
+        return float(rows[0]["starting_equity"])
+    return None
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "today": _today_et()}
+    return {"status": "ok", "today": _today_et(), "market_status": _market_status()}
+
+
+@app.get("/api/account")
+def account() -> dict[str, Any]:
+    data = _fetch_account()
+    prev = _previous_balance()
+    if data is None:
+        return {"available": False, "previous_balance": prev}
+    last_eq = data.get("last_equity")
+    previous = prev if prev is not None else last_eq
+    change = data["equity"] - previous if previous is not None else None
+    change_pct = (change / previous * 100) if change is not None and previous else None
+    return {
+        "available": True,
+        **data,
+        "previous_balance": previous,
+        "change": round(change, 2) if change is not None else None,
+        "change_pct": round(change_pct, 4) if change_pct is not None else None,
+    }
+
+
+@app.get("/api/positions")
+def positions() -> dict[str, Any]:
+    items = _fetch_positions()
+    account = _fetch_account()
+    equity = account["equity"] if account else None
+    for p in items:
+        if equity and equity > 0:
+            p["portfolio_pct"] = round(abs(p["market_value"]) / equity * 100, 2)
+        else:
+            p["portfolio_pct"] = None
+    return {"positions": items, "count": len(items)}
+
+
+@app.get("/api/portfolio")
+def portfolio() -> dict[str, Any]:
+    account = _fetch_account()
+    positions_data = _fetch_positions()
+    daily = _journal.list_daily_pnl(limit=90)
+    lifetime = _journal.get_lifetime_stats()
+    return {
+        "account": account,
+        "positions": positions_data,
+        "daily_pnl": daily,
+        "lifetime_stats": lifetime,
+        "market_status": _market_status(),
+        "today": _today_et(),
+    }
 
 
 @app.get("/api/overview")
@@ -80,12 +236,31 @@ def overview(date: str | None = None) -> dict[str, Any]:
     summary = _journal.get_daily_summary(d)
     stats = _journal.get_stats(d)
     watchlist = _journal.get_daily_watchlist(d)
+    account = _fetch_account()
+    positions_data = _fetch_positions()
+    lifetime = _journal.get_lifetime_stats()
+
+    # Prefer trade-based P&L when daily_pnl row has zero but trades exist
+    display_pnl = stats.get("total_pnl", 0)
+    if summary and summary.get("net_pnl") is not None:
+        if summary["net_pnl"] != 0 or stats.get("trade_count", 0) == 0:
+            display_pnl = summary["net_pnl"]
+        else:
+            display_pnl = stats["total_pnl"]
+
     return {
         "date": d,
         "summary": summary,
         "stats": stats,
+        "display_pnl": display_pnl,
         "watchlist": watchlist,
         "config": _sanitize_config(),
+        "account": account,
+        "positions": positions_data,
+        "lifetime_stats": lifetime,
+        "market_status": _market_status(),
+        "daily_pnl_history": _journal.list_daily_pnl(limit=30),
+        "last_trade_date": _journal.get_last_trade_date(),
     }
 
 

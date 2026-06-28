@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { AdminPage } from "./pages/Admin";
 import { EventsPage } from "./pages/Events";
 import { HistoryPage } from "./pages/History";
 import { LogsPage } from "./pages/Logs";
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="events" element={<EventsPage />} />
           <Route path="history" element={<HistoryPage />} />
           <Route path="logs" element={<LogsPage />} />
+          <Route path="admin" element={<AdminPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

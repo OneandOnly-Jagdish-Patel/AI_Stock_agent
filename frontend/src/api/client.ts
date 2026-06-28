@@ -17,6 +17,40 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+const ADMIN_KEY_STORAGE = "trading_admin_key";
+
+export function getAdminKey(): string {
+  return sessionStorage.getItem(ADMIN_KEY_STORAGE) ?? "";
+}
+
+export function setAdminKey(key: string): void {
+  sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
+}
+
+export function clearAdminKey(): void {
+  sessionStorage.removeItem(ADMIN_KEY_STORAGE);
+}
+
+async function adminFetch<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const key = getAdminKey();
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Key": key,
+      ...(options.headers as Record<string, string>),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(body || `${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 export const api = {
   overview: (date?: string) =>
     get<Overview>(`/api/overview${date ? `?date=${date}` : ""}`),
@@ -59,4 +93,21 @@ export const api = {
     const o = await get<Overview>("/api/overview");
     return o.last_trade_date;
   },
+  adminSettings: () =>
+    adminFetch<Record<string, unknown>>("/api/admin/settings"),
+  adminUpdateSettings: (updates: Record<string, unknown>) =>
+    adminFetch<{ ok: boolean; applied: string[]; settings: Record<string, unknown> }>(
+      "/api/admin/settings",
+      { method: "PUT", body: JSON.stringify({ updates }) },
+    ),
+  adminAddAnchor: (symbol: string) =>
+    adminFetch<{ ok: boolean; anchor_symbols: string[] }>("/api/admin/anchors", {
+      method: "POST",
+      body: JSON.stringify({ symbol }),
+    }),
+  adminRemoveAnchor: (symbol: string) =>
+    adminFetch<{ ok: boolean; anchor_symbols: string[] }>(
+      `/api/admin/anchors/${encodeURIComponent(symbol)}`,
+      { method: "DELETE" },
+    ),
 };

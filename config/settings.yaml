@@ -40,7 +40,7 @@ swing:
   morning_review_time: "08:15"  # AI reviews open positions before open (CST)
   session_end_time: "15:00"     # Trade until regular close (3:00 PM CST = 4:00 PM ET)
   # Sizing
-  max_open_positions: 3
+  max_open_positions: 5
   max_risk_per_trade_pct: 1.5
 
 session:
@@ -51,7 +51,7 @@ session:
 risk:
   max_risk_per_trade_pct: 1.0
   daily_max_loss_pct: 2.0
-  max_open_positions: 2
+  max_open_positions: 5
   pdt_equity_threshold: 25000
   max_day_trades: 3
 
@@ -100,9 +100,9 @@ screener:
   anchor_symbols:
     - SPY
     - QQQ
-  dynamic_slots: 3
+  dynamic_slots: 5
   run_time: "07:45"           # 7:45 AM CST = 8:45 AM ET
-  candidate_pool_size: 30
+  candidate_pool_size: 40
   min_price: 15.0
   max_price: 500.0
   min_volume: 1000000

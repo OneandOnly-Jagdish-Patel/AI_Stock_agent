@@ -1,4 +1,4 @@
-"""FastAPI dashboard API — read-only view of journal, config, and agent logs."""
+"""FastAPI dashboard API — journal, config, agent logs, and admin settings."""
 
 from __future__ import annotations
 
@@ -10,14 +10,21 @@ from pathlib import Path
 from typing import Any
 
 import pytz
-from fastapi import FastAPI, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from src.config import PROJECT_ROOT, load_config
 from src.execution.orders import OrderExecutor
 from src.execution.positions import PositionManager
 from src.journal.logger import TradeJournal
+from src.settings_store import (
+    add_anchor,
+    apply_patch,
+    get_editable_snapshot,
+    remove_anchor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +34,38 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 _config = load_config()
 _journal = TradeJournal(_config.journal_db_path)
 _log_path = PROJECT_ROOT / "logs" / "agent.log"
+_admin_key = os.getenv("ADMIN_API_KEY", "")
+
+
+def _reload_runtime_config() -> None:
+    global _config, _journal
+    _config = load_config()
+    _journal = TradeJournal(_config.journal_db_path)
+
+
+def _require_admin(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")) -> None:
+    if not _admin_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin API disabled — set ADMIN_API_KEY in .env on the server",
+        )
+    if not x_admin_key or x_admin_key != _admin_key:
+        raise HTTPException(status_code=401, detail="Invalid or missing admin key")
+
+
+class SettingsPatch(BaseModel):
+    updates: dict[str, Any] = Field(default_factory=dict)
+
+
+class AnchorRequest(BaseModel):
+    symbol: str
 
 # Recompute historical daily_pnl from trades on dashboard startup (idempotent).
 try:
@@ -348,6 +380,56 @@ def logs(lines: int = Query(200, le=1000)) -> dict[str, Any]:
         "exists": True,
         "lines": [line.rstrip("\n") for line in tail],
     }
+
+
+@app.get("/api/admin/settings")
+def admin_get_settings(_: None = Depends(_require_admin)) -> dict[str, Any]:
+    snapshot = get_editable_snapshot()
+    snapshot["admin_enabled"] = bool(_admin_key)
+    snapshot["note"] = (
+        "Dashboard reloads config immediately. Restart trading-agent service "
+        "for the agent to pick up changes."
+    )
+    return snapshot
+
+
+@app.put("/api/admin/settings")
+def admin_update_settings(
+    body: SettingsPatch,
+    _: None = Depends(_require_admin),
+) -> dict[str, Any]:
+    try:
+        result = apply_patch(body.updates)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    _reload_runtime_config()
+    return {"ok": True, **result, "settings": get_editable_snapshot()}
+
+
+@app.post("/api/admin/anchors")
+def admin_add_anchor(
+    body: AnchorRequest,
+    _: None = Depends(_require_admin),
+) -> dict[str, Any]:
+    try:
+        anchors = add_anchor(body.symbol)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    _reload_runtime_config()
+    return {"ok": True, "anchor_symbols": anchors}
+
+
+@app.delete("/api/admin/anchors/{symbol}")
+def admin_remove_anchor(
+    symbol: str,
+    _: None = Depends(_require_admin),
+) -> dict[str, Any]:
+    try:
+        anchors = remove_anchor(symbol)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    _reload_runtime_config()
+    return {"ok": True, "anchor_symbols": anchors}
 
 
 _frontend_dist = PROJECT_ROOT / "frontend" / "dist"

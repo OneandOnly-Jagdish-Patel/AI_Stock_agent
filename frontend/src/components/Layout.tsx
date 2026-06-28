@@ -11,6 +11,7 @@ const links = [
   { to: "/events", label: "Events & Briefings" },
   { to: "/history", label: "P&L History" },
   { to: "/logs", label: "Agent Logs" },
+  { to: "/admin", label: "Admin" },
 ];
 
 export function Layout() {

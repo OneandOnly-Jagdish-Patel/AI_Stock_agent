@@ -42,14 +42,12 @@ class LLMRouter:
         if self._primary == "google" and self.google.configured:
             chain.append(("google", True))
             chain.append(("ollama", self._ollama_healthy is True))
-            chain.append(("openclaw", True))
         else:
             if self._ollama_healthy is None:
                 pass  # caller should run check_health first
             chain.append(("ollama", self._ollama_healthy is not False))
             if self.google.configured:
                 chain.append(("google", True))
-            chain.append(("openclaw", True))
         return chain
 
     async def _first_result(
@@ -74,7 +72,6 @@ class LLMRouter:
         fns = {
             "google": lambda: self.google.trade_veto(context),
             "ollama": lambda: self.ollama.trade_veto(context),
-            "openclaw": lambda: self.openclaw.trade_veto(context),
         }
 
         best: TradeVetoDecision | None = None
@@ -110,7 +107,6 @@ class LLMRouter:
             {
                 "google": lambda: self.google.rank_watchlist(context),
                 "ollama": lambda: self.ollama.rank_watchlist(context),
-                "openclaw": lambda: self.openclaw.rank_watchlist(context),
             }
         )
         return result  # type: ignore[return-value]
@@ -122,7 +118,6 @@ class LLMRouter:
             {
                 "google": lambda: self.google.premarket_briefing(context),
                 "ollama": lambda: self.ollama.premarket_briefing(context),
-                "openclaw": lambda: self.openclaw.premarket_briefing(context),
             }
         )
         if briefing is not None:
@@ -141,7 +136,6 @@ class LLMRouter:
             {
                 "google": lambda: self.google.screener_rank(context),
                 "ollama": lambda: self.ollama.screener_rank(context),
-                "openclaw": lambda: self.openclaw.screener_rank(context),
             }
         )
         return result  # type: ignore[return-value]
@@ -160,7 +154,6 @@ class LLMRouter:
             {
                 "google": lambda: self.google.exit_advisor(context),
                 "ollama": lambda: self.ollama.exit_advisor(context),
-                "openclaw": lambda: self.openclaw.exit_advisor(context),
             }
         )
         if result is None:
@@ -193,7 +186,6 @@ class LLMRouter:
             {
                 "google": lambda: self.google.swing_review(context),
                 "ollama": lambda: self.ollama.swing_review(context),
-                "openclaw": lambda: self.openclaw.swing_review(context),
             }
         )
         if result is None:

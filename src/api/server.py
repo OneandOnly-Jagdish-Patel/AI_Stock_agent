@@ -19,6 +19,7 @@ from src.config import PROJECT_ROOT, load_config
 from src.execution.orders import OrderExecutor
 from src.execution.positions import PositionManager
 from src.journal.logger import TradeJournal
+from src.logging_sanitize import sanitize_log_message
 from src.settings_store import (
     add_anchor,
     apply_patch,
@@ -378,7 +379,7 @@ def logs(lines: int = Query(200, le=1000)) -> dict[str, Any]:
     return {
         "path": str(_log_path),
         "exists": True,
-        "lines": [line.rstrip("\n") for line in tail],
+        "lines": [sanitize_log_message(line.rstrip("\n")) for line in tail],
     }
 
 

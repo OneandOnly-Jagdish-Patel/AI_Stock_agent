@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.briefing.premarket import run_briefing
 from src.config import AppConfig, load_config
+from src.logging_sanitize import SensitiveDataFilter
 from src.data.bars import BarManager
 from src.data.stream import MarketDataStream
 from src.data.trade_stream import OrderUpdateStream
@@ -31,13 +32,18 @@ from src.strategy.swing_scalper import SwingScalper
 _log_dir = Path(__file__).resolve().parent.parent / "logs"
 _log_dir.mkdir(parents=True, exist_ok=True)
 
+_log_filter = SensitiveDataFilter()
+_handlers: list[logging.Handler] = [
+    logging.StreamHandler(),
+    logging.FileHandler(Path(__file__).resolve().parent.parent / "logs" / "agent.log"),
+]
+for _handler in _handlers:
+    _handler.addFilter(_log_filter)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(Path(__file__).resolve().parent.parent / "logs" / "agent.log"),
-    ],
+    handlers=_handlers,
 )
 logger = logging.getLogger(__name__)
 

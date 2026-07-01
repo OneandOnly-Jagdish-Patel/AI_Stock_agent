@@ -21,6 +21,11 @@ Respond with JSON only.
 Symbols and metrics:
 {context}
 
+Rules:
+- Prefer symbols with strong momentum (positive research_change_pct or price above VWAP)
+- If data_quality is "partial", use research_price and research_change_pct from Yahoo research
+- Do NOT rank symbols last solely because live rsi/vwap_dev/close are null when research metrics are present
+
 Respond exactly:
 {{"ranked": ["SYMBOL1", "SYMBOL2", ...], "reason": "brief reason"}}"""
 

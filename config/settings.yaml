@@ -111,5 +111,13 @@ screener:
   finnhub_enabled: true
   exclude_yesterday_losers: true
 
+# Research data (Yahoo Finance) — screener, enrichment, warmup fallback
+# Alpaca is still used for live stream, quotes during session, and order execution
+research:
+  provider: yahoo
+  yahoo_enabled: true
+  finnhub_fallback: true
+  warmup_min_bars: 30
+
 journal:
   db_path: data/trades.db

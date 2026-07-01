@@ -1,4 +1,4 @@
-"""Fetch screener candidates from Alpaca with universe fallback."""
+"""Fetch screener candidates from Yahoo (research) or Alpaca with fallbacks."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ from alpaca.data.timeframe import TimeFrame
 
 from src.config import AppConfig
 from src.data.bars import _parse_feed
+from src.data.yahoo_client import fetch_screener_candidates as yahoo_fetch_screener
+from src.data.yahoo_client import fetch_universe_ranked_by_volume
 from src.screener.universe import load_universe
 
 logger = logging.getLogger(__name__)
@@ -73,6 +75,16 @@ def fetch_from_universe_bars(config: AppConfig) -> list[Candidate]:
     symbols = load_universe()
     anchors = set(config.screener.anchor_symbols)
     symbols = [s for s in symbols if s not in anchors][:50]
+    top = config.screener.candidate_pool_size
+
+    if config.research.provider == "yahoo" and config.research.yahoo_enabled:
+        try:
+            ranked = fetch_universe_ranked_by_volume(symbols, top)
+            if ranked:
+                logger.info("Universe fallback via Yahoo: %d candidates", len(ranked))
+                return ranked
+        except Exception:
+            logger.warning("Yahoo universe fallback failed", exc_info=True)
 
     client = StockHistoricalDataClient(
         api_key=config.alpaca_api_key,
@@ -111,10 +123,20 @@ def fetch_from_universe_bars(config: AppConfig) -> list[Candidate]:
             )
         )
     candidates.sort(key=lambda c: c.volume, reverse=True)
-    return candidates[: config.screener.candidate_pool_size]
+    return candidates[:top]
 
 
 def fetch_candidates(config: AppConfig) -> list[Candidate]:
+    if config.research.provider == "yahoo" and config.research.yahoo_enabled:
+        try:
+            candidates = yahoo_fetch_screener(config.screener.candidate_pool_size)
+            if candidates:
+                logger.info("Yahoo screener returned %d candidates", len(candidates))
+                return candidates
+            logger.warning("Yahoo screener returned no candidates, falling back to Alpaca")
+        except Exception:
+            logger.warning("Yahoo screener failed, falling back to Alpaca", exc_info=True)
+
     candidates = fetch_from_alpaca_screener(config)
     if not candidates:
         logger.info("Using universe fallback for screener candidates")

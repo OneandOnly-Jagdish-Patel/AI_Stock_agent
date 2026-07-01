@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.briefing.premarket import run_briefing
 from src.config import AppConfig, load_config
+from src.data.yahoo_client import fetch_finnhub_quote, fetch_quote_snapshot
 from src.logging_sanitize import SensitiveDataFilter
 from src.data.bars import BarManager
 from src.data.stream import MarketDataStream
@@ -159,13 +160,46 @@ class TradingAgent:
             await asyncio.sleep(interval)
             if not self._in_trading_session() or not self.config.llm.enabled:
                 continue
-            context = {}
+
+            symbols = list(self.bar_manager.states.keys())
+            yahoo_snapshots: dict = {}
+            if self.config.research.provider == "yahoo" and self.config.research.yahoo_enabled:
+                try:
+                    yahoo_snapshots = fetch_quote_snapshot(symbols)
+                except Exception:
+                    logger.warning("Yahoo watchlist snapshot failed", exc_info=True)
+
+            context: dict = {}
             for symbol, state in self.bar_manager.states.items():
-                context[symbol] = {
-                    "rsi": state.rsi(self.config.strategy.rsi_period),
-                    "vwap_dev": state.vwap_deviation_pct(),
-                    "close": state.latest_close(),
+                rsi = state.rsi(self.config.strategy.rsi_period)
+                vwap_dev = state.vwap_deviation_pct()
+                close = state.latest_close()
+                entry: dict = {
+                    "rsi": rsi,
+                    "vwap_dev": vwap_dev,
+                    "close": close,
                 }
+
+                live_missing = rsi is None or vwap_dev is None or close is None
+                snap = yahoo_snapshots.get(symbol)
+                if live_missing and snap:
+                    entry["research_price"] = snap.price
+                    entry["research_change_pct"] = snap.change_pct
+                    entry["research_volume"] = snap.volume
+                    entry["metrics_source"] = snap.metrics_source
+                    entry["data_quality"] = "partial"
+                elif live_missing and self.config.research.finnhub_fallback and self.config.finnhub_api_key:
+                    fh = fetch_finnhub_quote(symbol, self.config.finnhub_api_key)
+                    if fh:
+                        entry["research_price"] = fh.price
+                        entry["research_change_pct"] = fh.change_pct
+                        entry["metrics_source"] = fh.metrics_source
+                        entry["data_quality"] = "partial"
+                else:
+                    entry["data_quality"] = "live"
+
+                context[symbol] = entry
+
             ranking = await self.llm.rank_watchlist(context)
             if ranking:
                 logger.info("Watchlist ranking: %s — %s", ranking.ranked, ranking.reason)

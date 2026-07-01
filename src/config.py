@@ -125,6 +125,14 @@ class ScreenerConfig:
 
 
 @dataclass
+class ResearchConfig:
+    provider: str = "yahoo"  # yahoo | alpaca
+    yahoo_enabled: bool = True
+    finnhub_fallback: bool = True
+    warmup_min_bars: int = 30
+
+
+@dataclass
 class LLMConfig:
     enabled: bool = True
     primary_provider: str = "auto"
@@ -165,6 +173,7 @@ class AppConfig:
     briefing: BriefingConfig = field(default_factory=BriefingConfig)
     journal_context: JournalContextConfig = field(default_factory=JournalContextConfig)
     screener: ScreenerConfig = field(default_factory=ScreenerConfig)
+    research: ResearchConfig = field(default_factory=ResearchConfig)
     ai_exit: AIExitConfig = field(default_factory=AIExitConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     journal_db_path: str = "data/trades.db"
@@ -190,6 +199,7 @@ def load_config(path: Path | None = None) -> AppConfig:
     briefing_raw = raw.get("briefing", {})
     journal_context_raw = raw.get("journal_context", {})
     screener_raw = raw.get("screener", {})
+    research_raw = raw.get("research", {})
     ai_exit_raw = raw.get("ai_exit", {})
     llm_raw = raw.get("llm", {})
     journal_raw = raw.get("journal", {})
@@ -235,6 +245,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         briefing=BriefingConfig(**{k: briefing_raw[k] for k in BriefingConfig.__dataclass_fields__ if k in briefing_raw}),
         journal_context=JournalContextConfig(**{k: journal_context_raw[k] for k in JournalContextConfig.__dataclass_fields__ if k in journal_context_raw}),
         screener=ScreenerConfig(**{k: screener_raw[k] for k in ScreenerConfig.__dataclass_fields__ if k in screener_raw}),
+        research=ResearchConfig(**{k: research_raw[k] for k in ResearchConfig.__dataclass_fields__ if k in research_raw}),
         ai_exit=AIExitConfig(**ai_exit_fields),
         llm=llm,
         journal_db_path=journal_path,

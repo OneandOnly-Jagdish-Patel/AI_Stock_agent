@@ -39,8 +39,8 @@ swing:
   flatten_on_close: false       # false = hold overnight (swing style)
   morning_review_time: "08:15"  # AI reviews open positions before open (CST)
   session_end_time: "15:00"     # Trade until regular close (3:00 PM CST = 4:00 PM ET)
-  # Sizing
-  max_open_positions: 5
+  # Sizing — spread capital across many simultaneous swing positions
+  max_open_positions: 12
   max_risk_per_trade_pct: 1.5
 
 session:
@@ -51,7 +51,8 @@ session:
 risk:
   max_risk_per_trade_pct: 1.0
   daily_max_loss_pct: 2.0
-  max_open_positions: 5
+  max_open_positions: 12
+  max_equity_pct_per_position: 8.0   # ~8% per name → up to ~12 names diversified
   pdt_equity_threshold: 25000
   max_day_trades: 3
 
@@ -96,13 +97,11 @@ journal_context:
 
 screener:
   enabled: true
-  mode: hybrid
-  anchor_symbols:
-    - SPY
-    - QQQ
-  dynamic_slots: 5
+  mode: dynamic              # no fixed ETF anchors — diversify across screener picks
+  anchor_symbols: []
+  dynamic_slots: 12
   run_time: "07:45"           # 7:45 AM CST = 8:45 AM ET
-  candidate_pool_size: 40
+  candidate_pool_size: 60
   min_price: 15.0
   max_price: 500.0
   min_volume: 1000000

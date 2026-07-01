@@ -22,6 +22,7 @@ def calculate_position_size(
         return 0.0
 
     shares = risk_amount / stop_distance
-    max_shares_by_equity = (equity * 0.1) / entry_price
+    position_cap_pct = risk_config.max_equity_pct_per_position / 100
+    max_shares_by_equity = (equity * position_cap_pct) / entry_price
     shares = min(shares, max_shares_by_equity)
     return max(1.0, math.floor(shares))

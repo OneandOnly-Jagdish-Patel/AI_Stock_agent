@@ -83,13 +83,19 @@ class RiskManager:
         self.state.kill_switch = True
         self.state.kill_reason = reason
 
+    def _max_open_positions(self) -> int:
+        if self.config.strategy.mode == "swing":
+            return self.config.swing.max_open_positions
+        return self.config.risk.max_open_positions
+
     def can_open_position(self, symbol: str) -> tuple[bool, str]:
         if self.state.kill_switch:
             return False, f"kill_switch: {self.state.kill_reason}"
 
+        max_positions = self._max_open_positions()
         open_count = self.positions.open_position_count()
-        if open_count >= self.config.risk.max_open_positions:
-            return False, f"max_open_positions ({self.config.risk.max_open_positions})"
+        if open_count >= max_positions:
+            return False, f"max_open_positions ({max_positions})"
 
         if symbol in self.state.open_symbols:
             return False, "already_in_position"

@@ -28,6 +28,7 @@ EDITABLE_PATHS: list[tuple[str, ...]] = [
     ("swing", "max_open_positions"),
     ("swing", "max_risk_per_trade_pct"),
     ("risk", "max_open_positions"),
+    ("risk", "max_equity_pct_per_position"),
     ("risk", "max_risk_per_trade_pct"),
     ("risk", "daily_max_loss_pct"),
     ("llm", "enabled"),

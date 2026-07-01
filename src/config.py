@@ -66,6 +66,7 @@ class RiskConfig:
     max_risk_per_trade_pct: float = 1.0
     daily_max_loss_pct: float = 2.0
     max_open_positions: int = 2
+    max_equity_pct_per_position: float = 10.0
     pdt_equity_threshold: float = 25000
     max_day_trades: int = 3
 

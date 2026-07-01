@@ -294,6 +294,7 @@ class SwingScalper:
         swing_risk = RiskConfig(
             max_risk_per_trade_pct=self.swing.max_risk_per_trade_pct,
             max_open_positions=self.swing.max_open_positions,
+            max_equity_pct_per_position=self.config.risk.max_equity_pct_per_position,
         )
         swing_strategy = StrategyConfig(stop_loss_pct=self.swing.stop_loss_pct)
         qty = calculate_position_size(equity, price, swing_risk, swing_strategy)

@@ -62,7 +62,7 @@ class LLMRouter:
                 return result, name
         return None, "none"
 
-    async def trade_veto(self, context: dict) -> tuple[TradeVetoDecision | None, str]:
+    async def trade_veto(self, context: dict, swing: bool = False) -> tuple[TradeVetoDecision | None, str]:
         if not self.config.enabled:
             return TradeVetoDecision(action="approve", confidence=1.0, reason="llm_disabled"), "none"
 
@@ -70,8 +70,8 @@ class LLMRouter:
             await self.check_health()
 
         fns = {
-            "google": lambda: self.google.trade_veto(context),
-            "ollama": lambda: self.ollama.trade_veto(context),
+            "google": lambda: self.google.trade_veto(context, swing=swing),
+            "ollama": lambda: self.ollama.trade_veto(context, swing=swing),
         }
 
         best: TradeVetoDecision | None = None

@@ -24,6 +24,7 @@ from src.llm.prompts import (
     PREMARKET_BRIEFING_PROMPT,
     SCREENER_RANK_PROMPT,
     SWING_REVIEW_PROMPT,
+    SWING_VETO_PROMPT,
     TRADE_VETO_PROMPT,
     WATCHLIST_RANK_PROMPT,
 )
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 _GOOGLE_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 _MAX_ATTEMPTS = 3
-_RETRY_DELAY_SECONDS = 7.0
+_RETRY_DELAY_SECONDS = 10.0
 
 
 def _safe_error_message(exc: BaseException) -> str:
@@ -193,8 +194,9 @@ class GoogleClient:
 
         raise ValueError("Google API returned empty content")
 
-    async def trade_veto(self, context: dict) -> TradeVetoDecision | None:
-        prompt = TRADE_VETO_PROMPT.format(context=json.dumps(context, indent=2))
+    async def trade_veto(self, context: dict, swing: bool = False) -> TradeVetoDecision | None:
+        template = SWING_VETO_PROMPT if swing else TRADE_VETO_PROMPT
+        prompt = template.format(context=json.dumps(context, indent=2))
         for attempt in range(2):
             try:
                 raw = await self._generate(prompt)

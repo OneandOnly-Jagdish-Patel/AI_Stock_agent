@@ -70,8 +70,10 @@ class TradingAgent:
         self._stream_task: asyncio.Task | None = None
         self._trade_stream_task: asyncio.Task | None = None
         self._morning_review_task: asyncio.Task | None = None
+        self._daily_screener_task: asyncio.Task | None = None
         self._session_closed_date: str | None = None
         self._morning_reviewed_date: str | None = None
+        self._screener_ran_date: str | None = None
 
     @property
     def _is_swing(self) -> bool:
@@ -142,6 +144,95 @@ class TradingAgent:
         logger.info("Pre-market briefing: %s", msg.replace("\n", " | "))
         self.journal.log_event("premarket_briefing", msg)
         await self.llm.alert("Pre-Market Briefing", msg)
+
+    @staticmethod
+    def _scalper_active(scalper: SymbolScalper | SwingScalper | None) -> bool:
+        """True if a scalper is holding or working an order (not idle)."""
+        if scalper is None:
+            return False
+        state = getattr(scalper, "state", None)
+        value = getattr(state, "value", state)
+        return str(value).lower() != "idle"
+
+    async def _refresh_watchlist(self) -> None:
+        """Re-run the screener mid-life and reconcile symbols, scalpers, and the stream."""
+        if self._stream is None:
+            return
+
+        prev_symbols = list(self.active_symbols)
+        await self._run_screener()
+        await self._run_premarket_briefing()
+        new_symbols = list(self.active_symbols)
+
+        added = [s for s in new_symbols if s not in self.scalpers]
+        removed = [s for s in prev_symbols if s not in new_symbols]
+        # Never drop a symbol that still has an open/working position.
+        dropped = [s for s in removed if not self._scalper_active(self.scalpers.get(s))]
+        holdouts = [s for s in removed if s not in dropped]
+        final_symbols = list(dict.fromkeys(new_symbols + holdouts))
+
+        self.bar_manager.set_symbols(final_symbols)
+        if added:
+            self.bar_manager.warmup(added)
+
+        ScalperClass = SwingScalper if self._is_swing else SymbolScalper
+        for symbol in added:
+            self.scalpers[symbol] = ScalperClass(
+                symbol,
+                self.config,
+                self.executor,
+                self.risk,
+                self.journal,
+                self.llm,
+                self._stream,
+                avoided_symbols=self.avoided_symbols,
+            )
+
+        # Refresh the avoid list reference on every live scalper.
+        for scalper in self.scalpers.values():
+            scalper.avoided_symbols = self.avoided_symbols
+
+        if added:
+            self._stream.subscribe(added)
+        if dropped:
+            self._stream.unsubscribe(dropped)
+            for symbol in dropped:
+                self.scalpers.pop(symbol, None)
+
+        logger.info(
+            "Daily watchlist refreshed: %s (added=%s, dropped=%s)",
+            final_symbols,
+            added or "none",
+            dropped or "none",
+        )
+
+    async def _daily_screener_loop(self) -> None:
+        """Re-run the screener once per weekday at run_time so the watchlist stays fresh."""
+        if not self.config.screener.enabled or self.config.screener.mode == "static":
+            return
+
+        tz = pytz.timezone(self.config.session.timezone)
+        while self._running:
+            await asyncio.sleep(60)
+            now = datetime.now(tz)
+            if now.weekday() >= 5:
+                continue
+
+            today = now.date().isoformat()
+            if today == self._screener_ran_date:
+                continue
+
+            run_h, run_m = map(int, self.config.screener.run_time.split(":"))
+            run_dt = now.replace(hour=run_h, minute=run_m, second=0, microsecond=0)
+            if now < run_dt:
+                continue
+
+            self._screener_ran_date = today
+            logger.info("Daily screener loop: re-running screener for %s", today)
+            try:
+                await self._refresh_watchlist()
+            except Exception:
+                logger.exception("Daily screener refresh failed")
 
     async def _on_bar(self, symbol: str, bar_data: dict) -> None:
         if not self._in_trading_session():
@@ -312,6 +403,7 @@ class TradingAgent:
                 self._stream_task,
                 self._trade_stream_task,
                 self._morning_review_task,
+                self._daily_screener_task,
             )
             if t and not t.done() and t is not current
         ]
@@ -364,6 +456,7 @@ class TradingAgent:
 
         await self._run_screener()
         await self._run_premarket_briefing()
+        self._screener_ran_date = today_str
 
         self.bar_manager.set_symbols(self.active_symbols)
         self.bar_manager.warmup(self.active_symbols)
@@ -389,6 +482,7 @@ class TradingAgent:
         self._session_task = asyncio.create_task(self._session_guard_loop())
         self._stream_task = asyncio.create_task(self._stream.run())
         self._trade_stream_task = asyncio.create_task(self._trade_stream.run())
+        self._daily_screener_task = asyncio.create_task(self._daily_screener_loop())
 
         if self._is_swing:
             self._morning_review_task = asyncio.create_task(self._morning_review_loop())

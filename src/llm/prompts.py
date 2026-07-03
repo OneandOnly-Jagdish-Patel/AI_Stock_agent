@@ -15,6 +15,29 @@ Rules:
 Respond exactly:
 {{"action": "approve" or "reject", "confidence": 0.0-1.0, "reason": "brief reason"}}"""
 
+SWING_VETO_PROMPT = """You are a swing/momentum trade risk filter. A rule-based momentum system has ALREADY
+generated this BUY signal. You may ONLY approve or reject it — you cannot suggest new trades.
+Respond with JSON only, no other text.
+
+The entry system already confirmed a momentum breakout: price above VWAP, EMA fast > EMA slow,
+a volume spike, RSI below the overbought ceiling, and an acceptable opening gap. Your job is to
+catch obvious risks, NOT to require an oversold/mean-reversion setup.
+
+Signal context:
+{context}
+
+Rules:
+- This is a MOMENTUM entry. Do NOT reject just because RSI is high or "not oversold" — elevated RSI
+  (roughly up to 72) is expected and healthy for a momentum breakout.
+- Reject if spread_pct is present and clearly too wide (>= max_spread_pct).
+- Reject if momentum is actually negative: vwap_deviation_pct < 0, or ema_fast <= ema_slow.
+- Reject if gap_pct is extreme (> 8%) — gap-and-crap / exhaustion risk.
+- Reject if historical_stats shows similar_trades >= 5 and win_rate < 0.4.
+- Otherwise APPROVE. On a clean momentum setup, approve with confidence >= 0.7.
+
+Respond exactly:
+{{"action": "approve" or "reject", "confidence": 0.0-1.0, "reason": "brief reason"}}"""
+
 WATCHLIST_RANK_PROMPT = """Rank these symbols for scalping priority based on the context.
 Respond with JSON only.
 

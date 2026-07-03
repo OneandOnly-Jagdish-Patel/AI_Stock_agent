@@ -17,6 +17,7 @@ from src.llm.prompts import (
     PREMARKET_BRIEFING_PROMPT,
     SCREENER_RANK_PROMPT,
     SWING_REVIEW_PROMPT,
+    SWING_VETO_PROMPT,
     TRADE_VETO_PROMPT,
     WATCHLIST_RANK_PROMPT,
 )
@@ -115,8 +116,9 @@ class OllamaClient:
                 return json.loads(match.group())
             raise
 
-    async def trade_veto(self, context: dict) -> TradeVetoDecision | None:
-        prompt = TRADE_VETO_PROMPT.format(context=json.dumps(context, indent=2))
+    async def trade_veto(self, context: dict, swing: bool = False) -> TradeVetoDecision | None:
+        template = SWING_VETO_PROMPT if swing else TRADE_VETO_PROMPT
+        prompt = template.format(context=json.dumps(context, indent=2))
         for attempt in range(2):
             try:
                 raw = await self._chat(prompt)

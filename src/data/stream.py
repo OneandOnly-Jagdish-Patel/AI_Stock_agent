@@ -45,6 +45,39 @@ class MarketDataStream:
     def get_quote(self, symbol: str) -> Quote | None:
         return self._latest_quotes.get(symbol)
 
+    def subscribe(self, symbols: list[str]) -> None:
+        """Subscribe additional symbols to the live stream (safe while running)."""
+        added: list[str] = []
+        for symbol in symbols:
+            if symbol in self.symbols:
+                continue
+            try:
+                self._stream.subscribe_bars(self._handle_bar, symbol)
+                self._stream.subscribe_quotes(self._handle_quote, symbol)
+                self.symbols.append(symbol)
+                added.append(symbol)
+            except Exception:
+                logger.warning("Failed to subscribe %s to stream", symbol, exc_info=True)
+        if added:
+            logger.info("Subscribed new symbols to stream: %s", added)
+
+    def unsubscribe(self, symbols: list[str]) -> None:
+        """Unsubscribe symbols that are no longer traded (safe while running)."""
+        removed: list[str] = []
+        for symbol in symbols:
+            if symbol not in self.symbols:
+                continue
+            try:
+                self._stream.unsubscribe_bars(symbol)
+                self._stream.unsubscribe_quotes(symbol)
+                self.symbols.remove(symbol)
+                self._latest_quotes.pop(symbol, None)
+                removed.append(symbol)
+            except Exception:
+                logger.debug("Failed to unsubscribe %s from stream", symbol, exc_info=True)
+        if removed:
+            logger.info("Unsubscribed symbols from stream: %s", removed)
+
     async def _handle_bar(self, bar: Any) -> None:
         symbol = bar.symbol
         data = {

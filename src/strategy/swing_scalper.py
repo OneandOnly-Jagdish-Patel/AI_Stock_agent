@@ -160,7 +160,7 @@ class SwingScalper:
         ctx = entry_signal.context
 
         if self.config.llm.enabled:
-            decision, source = await self.llm.trade_veto(ctx)
+            decision, source = await self.llm.trade_veto(ctx, swing=True)
             llm_action = decision.action
             llm_confidence = decision.confidence
             llm_reason = f"[{source}] {decision.reason}"

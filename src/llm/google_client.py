@@ -54,11 +54,20 @@ class GoogleClient:
     def configured(self) -> bool:
         return bool(self.api_key)
 
+    def _is_gemma(self) -> bool:
+        """Gemma models don't support JSON mode or thinking config."""
+        return "gemma" in self.model.lower()
+
     def _generation_config(self) -> dict:
-        config: dict = {
-            "temperature": 0.1,
-            "responseMimeType": "application/json",
-        }
+        config: dict = {"temperature": 0.1}
+
+        # Gemma models on the Generative Language API reject responseMimeType
+        # (JSON mode) and thinkingConfig — sending them causes 400/500 errors.
+        # Prompts already instruct JSON-only output and _extract_json parses it.
+        if self._is_gemma():
+            return config
+
+        config["responseMimeType"] = "application/json"
         level = self.config.google_thinking_level.strip()
         if level and level.lower() not in ("off", "none", "disabled"):
             config["thinkingConfig"] = {"thinkingLevel": level.upper()}
@@ -102,33 +111,39 @@ class GoogleClient:
                         json=payload,
                         timeout=timeout,
                     ) as resp:
-                        if resp.status in _RETRYABLE_STATUSES:
-                            last_error = aiohttp.ClientResponseError(
+                        if resp.status >= 400:
+                            try:
+                                body = await resp.text()
+                            except Exception:
+                                body = ""
+                            detail = (
+                                sanitize_log_message(body[:300].replace("\n", " ").strip())
+                                if body
+                                else ""
+                            )
+                            message = f"Google API returned {resp.status}" + (
+                                f": {detail}" if detail else ""
+                            )
+                            err = aiohttp.ClientResponseError(
                                 resp.request_info,
                                 resp.history,
                                 status=resp.status,
-                                message=f"Google API returned {resp.status}",
+                                message=message,
                             )
-                            if attempt < _MAX_ATTEMPTS - 1:
+                            if resp.status in _RETRYABLE_STATUSES and attempt < _MAX_ATTEMPTS - 1:
+                                last_error = err
                                 logger.warning(
-                                    "Google API %s on attempt %d/%d, retrying %s in %.0fs",
+                                    "Google API %s on attempt %d/%d, retrying %s in %.0fs — %s",
                                     resp.status,
                                     attempt + 1,
                                     _MAX_ATTEMPTS,
                                     self.model,
                                     _RETRY_DELAY_SECONDS,
+                                    detail or "(no error body)",
                                 )
                                 await asyncio.sleep(_RETRY_DELAY_SECONDS)
                                 continue
-                            raise last_error
-
-                        if resp.status >= 400:
-                            raise aiohttp.ClientResponseError(
-                                resp.request_info,
-                                resp.history,
-                                status=resp.status,
-                                message=f"Google API returned {resp.status}",
-                            )
+                            raise err
 
                         data = await resp.json()
             except (asyncio.TimeoutError, TimeoutError) as e:

@@ -146,18 +146,32 @@ class LLMConfig:
     google_rpm_limit: int = 12
     ollama_host: str = "http://127.0.0.1:11434"
     ollama_model: str = "phi4-mini"
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = ""
+    openrouter_fallback_models: list[str] = field(default_factory=list)
+    openrouter_reasoning: bool = False
     openclaw_gateway_url: str = "http://127.0.0.1:18789"
     openclaw_model: str = "gemma4:cloud"
     alert_channel: str = "telegram"
     alert_webhook_url: str = ""
 
+    def openrouter_configured(self) -> bool:
+        return bool(self.openrouter_api_key and self.openrouter_model)
+
     def resolved_primary(self) -> str:
-        """Return active LLM provider: google, ollama, or none."""
+        """Return active LLM provider: openrouter, google, or ollama."""
+        if self.primary_provider == "openrouter":
+            if self.openrouter_configured():
+                return "openrouter"
+            return "google" if self.google_api_key else "ollama"
         if self.primary_provider == "google":
             return "google" if self.google_api_key else "ollama"
         if self.primary_provider == "ollama":
             return "ollama"
-        # auto: prefer Google when API key is set
+        # auto: prefer OpenRouter, then Google, then Ollama
+        if self.openrouter_configured():
+            return "openrouter"
         if self.google_api_key:
             return "google"
         return "ollama"
@@ -208,6 +222,18 @@ def load_config(path: Path | None = None) -> AppConfig:
     strategy = StrategyConfig(**{k: strategy_raw[k] for k in StrategyConfig.__dataclass_fields__ if k in strategy_raw})
     hard_stop = ai_exit_raw.get("hard_stop_loss_pct", strategy.stop_loss_pct)
 
+    _openrouter_fallbacks_env = os.getenv("OPENROUTER_FALLBACK_MODELS", "")
+    if _openrouter_fallbacks_env:
+        openrouter_fallback_models = [m.strip() for m in _openrouter_fallbacks_env.split(",") if m.strip()]
+    else:
+        openrouter_fallback_models = list(llm_raw.get("openrouter_fallback_models", []))
+
+    _openrouter_reasoning_env = os.getenv("OPENROUTER_REASONING")
+    if _openrouter_reasoning_env is not None:
+        openrouter_reasoning = _openrouter_reasoning_env.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        openrouter_reasoning = bool(llm_raw.get("openrouter_reasoning", False))
+
     llm = LLMConfig(
         enabled=llm_raw.get("enabled", True),
         primary_provider=llm_raw.get("primary_provider", os.getenv("LLM_PRIMARY_PROVIDER", "auto")),
@@ -223,6 +249,14 @@ def load_config(path: Path | None = None) -> AppConfig:
         google_rpm_limit=int(llm_raw.get("google_rpm_limit", os.getenv("GOOGLE_RPM_LIMIT", "12"))),
         ollama_host=os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434"),
         ollama_model=os.getenv("OLLAMA_MODEL", "phi4-mini"),
+        openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
+        openrouter_base_url=os.getenv(
+            "OPENROUTER_BASE_URL",
+            llm_raw.get("openrouter_base_url", "https://openrouter.ai/api/v1"),
+        ),
+        openrouter_model=os.getenv("OPENROUTER_MODEL", llm_raw.get("openrouter_model", "")),
+        openrouter_fallback_models=openrouter_fallback_models,
+        openrouter_reasoning=openrouter_reasoning,
         openclaw_gateway_url=os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789"),
         openclaw_model=os.getenv("OPENCLAW_MODEL", "gemma4:cloud"),
         alert_channel=os.getenv("OPENCLAW_ALERT_CHANNEL", "telegram"),

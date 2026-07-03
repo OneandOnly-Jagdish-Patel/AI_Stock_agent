@@ -444,7 +444,16 @@ class TradingAgent:
         logger.info("Account equity: $%.2f", equity)
         llm_ok = await self.llm.check_health()
         primary = self.config.llm.resolved_primary()
-        if primary == "google" and self.config.llm.google_api_key:
+        if primary == "openrouter" and self.config.llm.openrouter_configured():
+            fallbacks = self.config.llm.openrouter_fallback_models
+            logger.info(
+                "LLM primary: OpenRouter (%s), reasoning=%s, fallbacks=%s, timeout=%ss",
+                self.config.llm.openrouter_model,
+                self.config.llm.openrouter_reasoning,
+                ", ".join(fallbacks) if fallbacks else "none",
+                self.config.llm.timeout_seconds,
+            )
+        elif primary == "google" and self.config.llm.google_api_key:
             logger.info(
                 "LLM primary: Google (%s), timeout=%ss, rpm_limit=%s",
                 self.config.llm.google_model,

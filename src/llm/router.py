@@ -17,8 +17,12 @@ from src.llm.ollama_client import (
     WatchlistRanking,
 )
 from src.llm.openclaw_client import OpenClawClient
+from src.llm.openrouter_client import OpenRouterClient
 
 logger = logging.getLogger(__name__)
+
+# Primaries that don't require a local Ollama health probe at call time.
+_REMOTE_PRIMARIES = ("google", "openrouter")
 
 
 class LLMRouter:
@@ -26,12 +30,15 @@ class LLMRouter:
         self.config = config
         self.google = GoogleClient(config)
         self.ollama = OllamaClient(config)
+        self.openrouter = OpenRouterClient(config)
         self.openclaw = OpenClawClient(config)
         self._ollama_healthy: bool | None = None
         self._primary = config.resolved_primary()
 
     async def check_health(self) -> bool:
         self._ollama_healthy = await self.ollama.health_check()
+        if self._primary == "openrouter" and self.openrouter.configured:
+            return True
         if self._primary == "google" and self.google.configured:
             return True
         return bool(self._ollama_healthy)
@@ -39,13 +46,20 @@ class LLMRouter:
     def _provider_chain(self) -> list[tuple[str, bool]]:
         """Ordered list of (name, is_available) for LLM providers."""
         chain: list[tuple[str, bool]] = []
-        if self._primary == "google" and self.google.configured:
+        if self._primary == "openrouter" and self.openrouter.configured:
+            chain.append(("openrouter", True))
+            if self.google.configured:
+                chain.append(("google", True))
+            chain.append(("ollama", self._ollama_healthy is True))
+        elif self._primary == "google" and self.google.configured:
             chain.append(("google", True))
+            if self.openrouter.configured:
+                chain.append(("openrouter", True))
             chain.append(("ollama", self._ollama_healthy is True))
         else:
-            if self._ollama_healthy is None:
-                pass  # caller should run check_health first
             chain.append(("ollama", self._ollama_healthy is not False))
+            if self.openrouter.configured:
+                chain.append(("openrouter", True))
             if self.google.configured:
                 chain.append(("google", True))
         return chain
@@ -66,10 +80,11 @@ class LLMRouter:
         if not self.config.enabled:
             return TradeVetoDecision(action="approve", confidence=1.0, reason="llm_disabled"), "none"
 
-        if self._ollama_healthy is None and self._primary != "google":
+        if self._ollama_healthy is None and self._primary not in _REMOTE_PRIMARIES:
             await self.check_health()
 
         fns = {
+            "openrouter": lambda: self.openrouter.trade_veto(context, swing=swing),
             "google": lambda: self.google.trade_veto(context, swing=swing),
             "ollama": lambda: self.ollama.trade_veto(context, swing=swing),
         }
@@ -101,10 +116,11 @@ class LLMRouter:
     async def rank_watchlist(self, context: dict) -> WatchlistRanking | None:
         if not self.config.enabled:
             return None
-        if self._ollama_healthy is None and self._primary != "google":
+        if self._ollama_healthy is None and self._primary not in _REMOTE_PRIMARIES:
             await self.check_health()
         result, _ = await self._first_result(
             {
+                "openrouter": lambda: self.openrouter.rank_watchlist(context),
                 "google": lambda: self.google.rank_watchlist(context),
                 "ollama": lambda: self.ollama.rank_watchlist(context),
             }
@@ -112,10 +128,11 @@ class LLMRouter:
         return result  # type: ignore[return-value]
 
     async def briefing_decision(self, context: dict) -> PremarketBriefing:
-        if self._ollama_healthy is None and self._primary != "google":
+        if self._ollama_healthy is None and self._primary not in _REMOTE_PRIMARIES:
             await self.check_health()
         briefing, _ = await self._first_result(
             {
+                "openrouter": lambda: self.openrouter.premarket_briefing(context),
                 "google": lambda: self.google.premarket_briefing(context),
                 "ollama": lambda: self.ollama.premarket_briefing(context),
             }
@@ -130,10 +147,11 @@ class LLMRouter:
         )
 
     async def screener_rank(self, context: dict) -> ScreenerRanking | None:
-        if self._ollama_healthy is None and self._primary != "google":
+        if self._ollama_healthy is None and self._primary not in _REMOTE_PRIMARIES:
             await self.check_health()
         result, _ = await self._first_result(
             {
+                "openrouter": lambda: self.openrouter.screener_rank(context),
                 "google": lambda: self.google.screener_rank(context),
                 "ollama": lambda: self.ollama.screener_rank(context),
             }
@@ -147,11 +165,12 @@ class LLMRouter:
         if not self.config.enabled:
             return sell, "none"
 
-        if self._ollama_healthy is None and self._primary != "google":
+        if self._ollama_healthy is None and self._primary not in _REMOTE_PRIMARIES:
             await self.check_health()
 
         result, source = await self._first_result(
             {
+                "openrouter": lambda: self.openrouter.exit_advisor(context),
                 "google": lambda: self.google.exit_advisor(context),
                 "ollama": lambda: self.ollama.exit_advisor(context),
             }
@@ -179,11 +198,12 @@ class LLMRouter:
         if not self.config.enabled:
             return exit_default, "none"
 
-        if self._ollama_healthy is None and self._primary != "google":
+        if self._ollama_healthy is None and self._primary not in _REMOTE_PRIMARIES:
             await self.check_health()
 
         result, source = await self._first_result(
             {
+                "openrouter": lambda: self.openrouter.swing_review(context),
                 "google": lambda: self.google.swing_review(context),
                 "ollama": lambda: self.ollama.swing_review(context),
             }

@@ -104,6 +104,8 @@ def _market_status() -> str:
 
 def _display_llm() -> str:
     provider = _config.llm.resolved_primary()
+    if provider == "openrouter" and _config.llm.openrouter_configured():
+        return f"openrouter / {_config.llm.openrouter_model}"
     if provider == "google" and _config.llm.google_api_key:
         return f"google / {_config.llm.google_model}"
     if provider == "ollama":

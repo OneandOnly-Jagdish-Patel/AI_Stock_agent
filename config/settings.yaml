@@ -58,13 +58,17 @@ risk:
 
 llm:
   enabled: true
-  primary_provider: auto   # auto | google | ollama (auto uses Google when GOOGLE_API_KEY is set)
+  primary_provider: openrouter   # auto | openrouter | google | ollama
   confidence_threshold: 0.7
-  timeout_seconds: 90       # screener prompts + Gemma thinking can exceed 30s
-  watchlist_interval_minutes: 15   # 15 min safer for Google free tier (~12 RPM)
+  timeout_seconds: 90       # screener prompts + reasoning models can exceed 30s
+  watchlist_interval_minutes: 15   # 15 min safer for free-tier rate limits
   google_model: gemma-4-31b-it
   google_thinking_level: MINIMAL
   google_rpm_limit: 12
+  # OpenRouter (env vars OPENROUTER_* take precedence over these)
+  openrouter_model: nvidia/nemotron-3-ultra-550b-a55b:free
+  openrouter_reasoning: false        # false = fast clean JSON; true = deeper reasoning
+  openrouter_fallback_models: []     # e.g. ["arcee-ai/trinity-large-preview:free"]
 
 execution:
   max_spread_pct: 0.03

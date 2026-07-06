@@ -23,6 +23,7 @@ from src.journal.logger import TradeJournal, TradeRecord
 from src.llm.router import LLMRouter
 from src.risk.manager import RiskManager
 from src.risk.sizing import calculate_position_size
+from src.strategy.entry_context import attach_daily_price_context
 from src.strategy.indicators import IndicatorState
 from src.strategy.swing_signals import SignalType, evaluate_swing_entry, evaluate_swing_exit
 
@@ -59,6 +60,7 @@ class SwingScalper:
         self.llm = llm
         self.stream = stream
         self.avoided_symbols = avoided_symbols or set()
+        self._avoid_block_logged = False
 
         self.state = SwingState.IDLE
         self.entry_price: float = 0.0
@@ -134,7 +136,20 @@ class SwingScalper:
             return
 
         if self.symbol in self.avoided_symbols:
-            logger.debug("%s skipped — on pre-market avoid list", self.symbol)
+            if not self._avoid_block_logged:
+                self._avoid_block_logged = True
+                self.journal.log_signal(
+                    self.symbol,
+                    "entry_vetoed",
+                    "premarket_avoid",
+                    "reject",
+                    1.0,
+                    "Symbol on pre-market avoid list for today",
+                )
+                logger.info(
+                    "%s entry blocked — on pre-market avoid list for today",
+                    self.symbol,
+                )
             return
 
         entry_signal = evaluate_swing_entry(
@@ -157,7 +172,42 @@ class SwingScalper:
         llm_action = "approve"
         llm_confidence = 1.0
         llm_reason = "llm_disabled"
-        ctx = entry_signal.context
+        ctx = dict(entry_signal.context)
+
+        jc = self.config.journal_context
+        if jc.enabled:
+            stats = self.journal.get_similar_setup_stats(
+                self.symbol,
+                ctx.get("rsi", 0),
+                ctx.get("vwap_deviation_pct", 0),
+                rsi_tolerance=jc.rsi_tolerance,
+                lookback_days=jc.lookback_days,
+            )
+            ctx["historical_stats"] = stats
+            if (
+                stats["similar_trades"] >= jc.min_trades_for_veto
+                and stats["win_rate"] < jc.min_win_rate
+            ):
+                self.journal.log_signal(
+                    self.symbol,
+                    "entry_vetoed",
+                    entry_signal.reason,
+                    "reject",
+                    1.0,
+                    f"historical win_rate {stats['win_rate']:.2f} below {jc.min_win_rate}",
+                    rsi=ctx.get("rsi"),
+                    vwap_dev=ctx.get("vwap_deviation_pct"),
+                    volume_ratio=ctx.get("volume_ratio"),
+                )
+                logger.info(
+                    "%s swing entry blocked by journal history: %d trades, win_rate=%.2f",
+                    self.symbol,
+                    stats["similar_trades"],
+                    stats["win_rate"],
+                )
+                return
+
+        attach_daily_price_context(ctx, self.symbol, close)
 
         if self.config.llm.enabled:
             decision, source = await self.llm.trade_veto(ctx, swing=True)

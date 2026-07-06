@@ -59,6 +59,7 @@ class SymbolScalper:
         self.llm = llm
         self.stream = stream
         self.avoided_symbols = avoided_symbols or set()
+        self._avoid_block_logged = False
         self.state = ScalpState.IDLE
         self.entry_price: float = 0.0
         self.highest_since_entry: float = 0.0
@@ -109,7 +110,20 @@ class SymbolScalper:
             return
 
         if self.symbol in self.avoided_symbols:
-            logger.debug("%s skipped — on pre-market avoid list", self.symbol)
+            if not self._avoid_block_logged:
+                self._avoid_block_logged = True
+                self.journal.log_signal(
+                    self.symbol,
+                    "entry_vetoed",
+                    "premarket_avoid",
+                    "reject",
+                    1.0,
+                    "Symbol on pre-market avoid list for today",
+                )
+                logger.info(
+                    "%s entry blocked — on pre-market avoid list for today",
+                    self.symbol,
+                )
             return
 
         entry_signal = evaluate_entry(

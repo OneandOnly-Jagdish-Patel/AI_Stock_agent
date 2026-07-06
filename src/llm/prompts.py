@@ -29,6 +29,9 @@ Signal context:
 Rules:
 - This is a MOMENTUM entry. Do NOT reject just because RSI is high or "not oversold" — elevated RSI
   (roughly up to 72) is expected and healthy for a momentum breakout.
+- Use daily_price_history and daily_trend when present: recent multi-day pullback with improving
+  intraday momentum can be a valid buy; reject if price is in free-fall (many consecutive down days
+  with no intraday strength) or far below the period low without reversal signs.
 - Reject if spread_pct is present and clearly too wide (>= max_spread_pct).
 - Reject if momentum is actually negative: vwap_deviation_pct < 0, or ema_fast <= ema_slow.
 - Reject if gap_pct is extreme (> 8%) — gap-and-crap / exhaustion risk.

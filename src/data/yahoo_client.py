@@ -199,6 +199,41 @@ def fetch_daily_metrics(symbols: list[str], days: int = 5) -> dict[str, DailyMet
     return result
 
 
+def fetch_recent_daily_closes(symbol: str, days: int = 5) -> list[dict[str, float | str]]:
+    """Return the last N daily closes (oldest first) for entry trend context."""
+    period = f"{max(days + 2, 7)}d"
+    _pause()
+    try:
+        data = yf.download(
+            symbol,
+            period=period,
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            threads=False,
+        )
+    except Exception:
+        logger.warning("Yahoo daily close history failed for %s", symbol, exc_info=True)
+        return []
+
+    if data is None or data.empty:
+        return []
+
+    df = _flatten_download(data, symbol)
+    if df is None or df.empty or "Close" not in df.columns:
+        return []
+
+    tail = df.tail(days)
+    bars: list[dict[str, float | str]] = []
+    for idx, row in tail.iterrows():
+        close = float(row["Close"])
+        if close <= 0:
+            continue
+        date_str = idx.date().isoformat() if hasattr(idx, "date") else str(idx)[:10]
+        bars.append({"date": date_str, "close": round(close, 4)})
+    return bars
+
+
 def fetch_universe_ranked_by_volume(symbols: list[str], top: int) -> list[Candidate]:
     """Rank universe symbols by latest daily volume via Yahoo."""
     from src.screener.fetch import Candidate

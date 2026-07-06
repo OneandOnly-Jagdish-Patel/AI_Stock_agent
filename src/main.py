@@ -61,6 +61,7 @@ class TradingAgent:
         self.scalpers: dict[str, SymbolScalper | SwingScalper] = {}
         self.active_symbols: list[str] = list(config.symbols)
         self.avoided_symbols: set[str] = set()
+        self._avoid_list_date: str | None = None
         self._stream: MarketDataStream | None = None
         self._trade_stream: OrderUpdateStream | None = None
         self._running = False
@@ -135,9 +136,15 @@ class TradingAgent:
             return
         await self._wait_until_briefing_time()
         briefing = await run_briefing(self.config, self.llm, self.active_symbols)
-        self.avoided_symbols = {s.upper() for s in briefing.avoid}
+        tz = pytz.timezone(self.config.session.timezone)
+        today = datetime.now(tz).date().isoformat()
+        if self._avoid_list_date != today:
+            self.avoided_symbols.clear()
+            self._avoid_list_date = today
+        new_avoid = {s.upper() for s in briefing.avoid}
+        self.avoided_symbols |= new_avoid
         msg = (
-            f"Avoid: {', '.join(briefing.avoid) or 'none'}\n"
+            f"Avoid: {', '.join(sorted(self.avoided_symbols)) or 'none'}\n"
             f"Caution: {', '.join(briefing.caution) or 'none'}\n"
             f"Reason: {briefing.reason}"
         )

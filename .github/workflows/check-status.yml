@@ -1,0 +1,15 @@
+name: Check VM Status
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run status check
+        run: bash scripts/check_status.sh

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { DateFilter } from "../components/DateFilter";
+import { PageSkeleton } from "../components/Skeleton";
 import type { Event } from "../types";
 import { fmtTs } from "../utils/format";
 
@@ -38,6 +39,8 @@ export function EventsPage() {
     load();
   }, [load]);
 
+  if (loading && !events.length) return <PageSkeleton />;
+
   return (
     <>
       <div className="page-header">
@@ -49,6 +52,7 @@ export function EventsPage() {
         <select
           value={eventType}
           onChange={(e) => setEventType(e.target.value)}
+          aria-label="Filter by event type"
         >
           <option value="">All events</option>
           {EVENT_TYPES.filter(Boolean).map((t) => (
@@ -60,45 +64,42 @@ export function EventsPage() {
       </div>
 
       {error && <div className="error">{error}</div>}
-      {loading && <div className="loading">Loading events…</div>}
 
-      {!loading && (
-        <div className="panel">
-          <div className="panel-header">
-            Agent events
-            <span className="mono" style={{ fontWeight: 400, color: "var(--text-muted)" }}>
-              {events.length} items
-            </span>
-          </div>
-          <div className="panel-body">
-            {events.length === 0 ? (
-              <div className="empty">No events logged for this date.</div>
-            ) : (
-              events.map((e) => (
-                <div className="trip-card" key={e.id}>
-                  <div className="trip-header">
-                    <span className={`badge badge-event`}>{e.event_type}</span>
-                    <span className="mono" style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>
-                      {fmtTs(e.ts)}
-                    </span>
-                  </div>
-                  <pre
-                    style={{
-                      margin: 0,
-                      whiteSpace: "pre-wrap",
-                      fontFamily: "var(--font)",
-                      fontSize: "0.88rem",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    {e.message}
-                  </pre>
-                </div>
-              ))
-            )}
-          </div>
+      <div className="panel">
+        <div className="panel-header">
+          Agent events
+          <span className="mono" style={{ fontWeight: 400, color: "var(--text-muted)" }}>
+            {events.length} items
+          </span>
         </div>
-      )}
+        <div className="panel-body">
+          {events.length === 0 ? (
+            <div className="empty">No events logged for this date.</div>
+          ) : (
+            events.map((e) => (
+              <div className="insight-card" key={e.id}>
+                <div className="trip-header">
+                  <span className="badge badge-event">{e.event_type}</span>
+                  <span className="mono" style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>
+                    {fmtTs(e.ts)}
+                  </span>
+                </div>
+                <pre
+                  style={{
+                    margin: 0,
+                    whiteSpace: "pre-wrap",
+                    fontFamily: "var(--font)",
+                    fontSize: "0.88rem",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  {e.message}
+                </pre>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </>
   );
 }

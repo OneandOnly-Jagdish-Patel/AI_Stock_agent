@@ -1,17 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Briefcase } from "lucide-react";
 import {
-  CartesianGrid,
-  Line,
-  LineChart,
+  Area,
+  AreaChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { api } from "../api/client";
+import { ChartPanel } from "../components/ChartPanel";
+import { DataTable } from "../components/DataTable";
 import { DateFilter } from "../components/DateFilter";
+import { EmptyState } from "../components/EmptyState";
+import { HeroMetric } from "../components/HeroMetric";
+import { HoldingCard } from "../components/HoldingCard";
+import { LoadingButton } from "../components/LoadingButton";
+import { OverviewSkeleton } from "../components/Skeleton";
 import { StatCard } from "../components/StatCard";
+import { StatusBanner } from "../components/StatusBanner";
 import type { Overview } from "../types";
+import { chartTooltipStyle, getChartColors } from "../utils/chartTheme";
 import { fmtMoney, fmtPct, fmtPctNum, DISPLAY_TZ_LABEL } from "../utils/format";
 
 function marketBanner(status: string) {
@@ -32,6 +41,7 @@ export function OverviewPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [chartColors, setChartColors] = useState(getChartColors());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,6 +60,10 @@ export function OverviewPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setChartColors(getChartColors());
+  }, [data]);
 
   const equityChart = useMemo(() => {
     if (!data) return [];
@@ -75,7 +89,7 @@ export function OverviewPage() {
     return points;
   }, [data]);
 
-  if (loading && !data) return <div className="loading">Loading dashboard…</div>;
+  if (loading && !data) return <OverviewSkeleton />;
 
   const stats = data?.stats;
   const account = data?.account;
@@ -105,76 +119,104 @@ export function OverviewPage() {
     account?.last_equity ??
     data?.daily_pnl_history?.[0]?.ending_equity;
 
+  const change =
+    account?.change ??
+    (previousBalance != null && account?.equity != null
+      ? account.equity - previousBalance
+      : null);
+  const changePct = account?.change_pct;
+  const changePositive = (change ?? 0) >= 0;
+
+  const positionsTable = data?.positions?.length ? (
+    <table className="data-table">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Qty</th>
+          <th>Entry</th>
+          <th>Current</th>
+          <th>Unrealized</th>
+          <th>% Port</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.positions.map((p) => (
+          <tr key={p.symbol}>
+            <td>
+              <strong>{p.symbol}</strong>
+            </td>
+            <td className="mono">{p.qty}</td>
+            <td className="mono">{fmtMoney(p.avg_entry_price)}</td>
+            <td className="mono">{fmtMoney(p.current_price)}</td>
+            <td
+              className={`mono ${p.unrealized_pl >= 0 ? "positive" : "negative"}`}
+            >
+              {p.unrealized_pl >= 0 ? "+" : ""}
+              {fmtMoney(p.unrealized_pl)} ({fmtPctNum(p.unrealized_plpc)})
+            </td>
+            <td className="mono">
+              {p.portfolio_pct != null ? `${p.portfolio_pct}%` : "—"}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ) : (
+    <EmptyState
+      icon={Briefcase}
+      title="No open positions"
+      description="Your agent hasn't opened any positions yet."
+    />
+  );
+
+  const positionsMobile = data?.positions?.length ? (
+    <div>
+      {data.positions.map((p) => (
+        <HoldingCard key={p.symbol} position={p} />
+      ))}
+    </div>
+  ) : (
+    <EmptyState
+      icon={Briefcase}
+      title="No open positions"
+      description="Your agent hasn't opened any positions yet."
+    />
+  );
+
   return (
     <>
       <div className="page-header">
         <h2>Overview</h2>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-          <button type="button" className="refresh-btn" onClick={load}>
+        <div className="page-header-actions">
+          <LoadingButton loading={loading} onClick={load}>
             Refresh
-          </button>
+          </LoadingButton>
           <DateFilter value={date} onChange={setDate} />
         </div>
       </div>
 
       {error && <div className="error">{error}</div>}
-      {banner && (
-        <div
-          className="panel"
-          style={{ marginBottom: "1rem", padding: "0.75rem 1rem", opacity: 0.95 }}
-        >
-          {banner}
-        </div>
-      )}
+      {banner && <StatusBanner message={banner} />}
 
-      <div className="stats-grid">
-        <StatCard
-          label="Current Balance"
-          value={account?.equity != null ? fmtMoney(account.equity) : "—"}
-          sub={
-            account?.available === false
-              ? "Alpaca unavailable"
-              : "Live from Alpaca"
-          }
-        />
-        <StatCard
-          label="Previous Balance"
-          value={previousBalance != null ? fmtMoney(previousBalance) : "—"}
-          sub="Prior day / last close"
-        />
-        <StatCard
-          label="Change"
-          value={
-            account?.change != null
-              ? fmtMoney(account.change)
-              : previousBalance != null && account?.equity != null
-                ? fmtMoney(account.equity - previousBalance)
-                : "—"
-          }
-          className={
-            (account?.change ?? 0) >= 0 ? "positive" : "negative"
-          }
-          sub={
-            account?.change_pct != null
-              ? fmtPctNum(account.change_pct)
-              : undefined
-          }
-        />
-        <StatCard
-          label="Buying Power"
-          value={
-            account?.buying_power != null ? fmtMoney(account.buying_power) : "—"
-          }
-        />
-      </div>
+      <HeroMetric
+        label="Portfolio Value"
+        value={account?.equity != null ? fmtMoney(account.equity) : "—"}
+        change={change != null ? `${changePositive ? "+" : ""}${fmtMoney(change)}` : undefined}
+        changePct={changePct != null ? fmtPctNum(changePct) : undefined}
+        positive={changePositive}
+        sub={
+          account?.available === false
+            ? "Alpaca unavailable"
+            : `Buying power ${account?.buying_power != null ? fmtMoney(account.buying_power) : "—"}`
+        }
+      />
 
-      <div className="stats-grid">
+      <div className="metrics-scroll">
         <StatCard
+          variant="compact"
           label={`P&L (${data?.date ?? "today"})`}
           value={
-            hasDayActivity || dayPnl != null
-              ? fmtMoney(dayPnl ?? 0)
-              : "—"
+            hasDayActivity || dayPnl != null ? fmtMoney(dayPnl ?? 0) : "—"
           }
           className={(dayPnl ?? 0) >= 0 ? "positive" : "negative"}
           sub={
@@ -184,12 +226,14 @@ export function OverviewPage() {
           }
         />
         <StatCard
+          variant="compact"
           label="All-time P&L"
           value={fmtMoney(lifetime?.total_pnl ?? 0)}
           className={(lifetime?.total_pnl ?? 0) >= 0 ? "positive" : "negative"}
           sub={`${lifetime?.trade_count ?? 0} round trips`}
         />
         <StatCard
+          variant="compact"
           label="Win Rate"
           value={
             (lifetime?.trade_count ?? 0) > 0
@@ -200,55 +244,70 @@ export function OverviewPage() {
           }
           sub={
             (lifetime?.trade_count ?? 0) > 0
-              ? `${lifetime?.win_count ?? 0}W / ${lifetime?.loss_count ?? 0}L lifetime`
-              : "No closed trades yet"
+              ? `${lifetime?.win_count ?? 0}W / ${lifetime?.loss_count ?? 0}L`
+              : "No closed trades"
           }
         />
         <StatCard
-          label="Open Positions"
+          variant="compact"
+          label="Positions"
           value={String(data?.positions?.length ?? 0)}
           sub={
             data?.positions?.length
               ? data.positions.map((p) => p.symbol).join(", ")
-              : "None"
+              : "None open"
           }
         />
       </div>
 
       {equityChart.length > 0 && (
-        <div className="panel" style={{ marginBottom: "1rem" }}>
+        <div className="panel">
           <div className="panel-header">Balance Over Time</div>
-          <div className="panel-body chart-wrap">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={equityChart}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#243044" />
-                <XAxis dataKey="date" stroke="#8b9cb3" fontSize={12} />
+          <div className="panel-body chart-wrap chart-wrap--tall">
+            <ChartPanel
+              title="Balance Over Time"
+              summary={`Equity trend across ${equityChart.length} days. Latest value ${account?.equity != null ? fmtMoney(account.equity) : "unavailable"}.`}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={equityChart}>
+                <defs>
+                  <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={chartColors.positive} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={chartColors.positive} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="date"
+                  stroke={chartColors.axis}
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                />
                 <YAxis
-                  stroke="#8b9cb3"
+                  stroke={chartColors.axis}
                   fontSize={12}
                   domain={["auto", "auto"]}
+                  tickLine={false}
+                  axisLine={false}
                   tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`}
+                  width={52}
                 />
                 <Tooltip
-                  contentStyle={{
-                    background: "#121820",
-                    border: "1px solid #243044",
-                    borderRadius: 8,
-                  }}
-                  formatter={(v: number, name: string) => [
-                    name === "equity" ? fmtMoney(v) : fmtMoney(v),
-                    name === "equity" ? "Equity" : "Daily P&L",
-                  ]}
+                  contentStyle={chartTooltipStyle()}
+                  formatter={(v: number) => [fmtMoney(v), "Equity"]}
                 />
-                <Line
+                <Area
                   type="monotone"
                   dataKey="equity"
-                  stroke="#22c55e"
+                  stroke={chartColors.positive}
                   strokeWidth={2}
-                  dot={{ r: 3 }}
+                  fill="url(#equityGradient)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: chartColors.positive }}
                 />
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
+            </ChartPanel>
           </div>
         </div>
       )}
@@ -256,43 +315,8 @@ export function OverviewPage() {
       <div className="grid-2">
         <div className="panel">
           <div className="panel-header">Open Positions</div>
-          <div className="panel-body data-table-wrap">
-            {data?.positions?.length ? (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Symbol</th>
-                    <th>Qty</th>
-                    <th>Entry</th>
-                    <th>Current</th>
-                    <th>Unrealized</th>
-                    <th>% Port</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.positions.map((p) => (
-                    <tr key={p.symbol}>
-                      <td>
-                        <strong>{p.symbol}</strong>
-                      </td>
-                      <td className="mono">{p.qty}</td>
-                      <td className="mono">{fmtMoney(p.avg_entry_price)}</td>
-                      <td className="mono">{fmtMoney(p.current_price)}</td>
-                      <td
-                        className={`mono ${p.unrealized_pl >= 0 ? "positive" : "negative"}`}
-                      >
-                        {fmtMoney(p.unrealized_pl)} ({fmtPctNum(p.unrealized_plpc)})
-                      </td>
-                      <td className="mono">
-                        {p.portfolio_pct != null ? `${p.portfolio_pct}%` : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="empty">No open positions.</div>
-            )}
+          <div className="panel-body panel-body--flush data-table-wrap">
+            <DataTable desktop={positionsTable} mobile={positionsMobile} />
           </div>
         </div>
 
@@ -333,8 +357,8 @@ export function OverviewPage() {
         </div>
       </div>
 
-      <div className="panel">
-        <div className="panel-header">Agent Config</div>
+      <details className="config-details">
+        <summary>Agent Config</summary>
         <div className="panel-body">
           <div className="trip-grid">
             <div>
@@ -380,7 +404,7 @@ export function OverviewPage() {
             </div>
           </div>
         </div>
-      </div>
+      </details>
     </>
   );
 }

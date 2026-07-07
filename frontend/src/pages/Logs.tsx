@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
+import { LoadingButton } from "../components/LoadingButton";
 
 function logClass(line: string) {
   if (line.includes("ERROR") || line.includes("Error")) return "error";
@@ -38,19 +39,25 @@ export function LogsPage() {
     <>
       <div className="page-header">
         <h2>Agent Logs</h2>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-          <label style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+        <div className="page-header-actions">
+          <label
+            style={{
+              fontSize: "0.85rem",
+              color: "var(--text-muted)",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.35rem",
+              minHeight: 44,
+            }}
+          >
             <input
               type="checkbox"
               checked={autoRefresh}
               onChange={(e) => setAutoRefresh(e.target.checked)}
-              style={{ marginRight: "0.35rem" }}
             />
             Auto-refresh (5s)
           </label>
-          <button type="button" className="refresh-btn" onClick={load}>
-            Refresh
-          </button>
+          <LoadingButton onClick={load}>Refresh</LoadingButton>
         </div>
       </div>
 

@@ -1,21 +1,20 @@
-import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Outlet, useLocation } from "react-router-dom";
 import { api } from "../api/client";
-import { fmtMoney } from "../utils/format";
-
-const links = [
-  { to: "/", label: "Overview" },
-  { to: "/trades", label: "Trades & Reasons" },
-  { to: "/signals", label: "AI Decisions" },
-  { to: "/screener", label: "Screener" },
-  { to: "/events", label: "Events & Briefings" },
-  { to: "/history", label: "P&L History" },
-  { to: "/logs", label: "Agent Logs" },
-  { to: "/admin", label: "Admin" },
-];
+import { moreNavItems } from "../config/nav";
+import { BottomNav } from "./BottomNav";
+import { MoreMenu } from "./MoreMenu";
+import { Sidebar } from "./Sidebar";
 
 export function Layout() {
   const [equity, setEquity] = useState<number | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const location = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
+
+  const moreActive = moreNavItems.some((item) =>
+    location.pathname.startsWith(item.to),
+  );
 
   useEffect(() => {
     api
@@ -24,36 +23,30 @@ export function Layout() {
       .catch(() => setEquity(null));
   }, []);
 
+  useEffect(() => {
+    setMoreOpen(false);
+    mainRef.current?.focus();
+  }, [location.pathname]);
+
   return (
     <div className="layout">
-      <aside className="sidebar">
-        <div className="brand">
-          <h1>AI Trading Agent</h1>
-          <p>Paper trading dashboard</p>
-          {equity != null && (
-            <p className="mono" style={{ marginTop: "0.5rem", color: "var(--green)" }}>
-              {fmtMoney(equity)}
-            </p>
-          )}
-        </div>
-        <nav>
-          {links.map((l) => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              end={l.to === "/"}
-              className={({ isActive }) =>
-                `nav-link${isActive ? " active" : ""}`
-              }
-            >
-              {l.label}
-            </NavLink>
-          ))}
-        </nav>
-      </aside>
-      <main className="main">
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+      <Sidebar equity={equity} />
+      <main
+        id="main-content"
+        ref={mainRef}
+        className="main"
+        tabIndex={-1}
+      >
         <Outlet />
       </main>
+      <BottomNav
+        onMoreClick={() => setMoreOpen((o) => !o)}
+        moreActive={moreActive || moreOpen}
+      />
+      <MoreMenu open={moreOpen} onClose={() => setMoreOpen(false)} />
     </div>
   );
 }

@@ -3,13 +3,12 @@ import { Briefcase } from "lucide-react";
 import {
   Area,
   AreaChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { api } from "../api/client";
-import { ChartPanel } from "../components/ChartPanel";
+import { ChartPanel, chartHeights } from "../components/ChartPanel";
 import { DataTable } from "../components/DataTable";
 import { DateFilter } from "../components/DateFilter";
 import { EmptyState } from "../components/EmptyState";
@@ -267,8 +266,8 @@ export function OverviewPage() {
             <ChartPanel
               title="Balance Over Time"
               summary={`Equity trend across ${equityChart.length} days. Latest value ${account?.equity != null ? fmtMoney(account.equity) : "unavailable"}.`}
+              height={chartHeights.tall}
             >
-              <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={equityChart}>
                 <defs>
                   <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
@@ -306,7 +305,6 @@ export function OverviewPage() {
                   activeDot={{ r: 4, fill: chartColors.positive }}
                 />
               </AreaChart>
-            </ResponsiveContainer>
             </ChartPanel>
           </div>
         </div>

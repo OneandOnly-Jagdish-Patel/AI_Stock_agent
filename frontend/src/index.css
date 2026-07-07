@@ -105,7 +105,9 @@
   --sidebar-width: 248px;
   --bottom-nav-height: 64px;
   --focus-ring: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-accent);
-  --content-max: 1280px;
+  --content-max: none;
+  --chart-height: 280px;
+  --chart-height-tall: 320px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -299,11 +301,11 @@ a:focus-visible {
 }
 
 .main {
+  width: 100%;
   padding: var(--space-4);
   padding-bottom: calc(var(--bottom-nav-height) + var(--space-6) + env(safe-area-inset-bottom, 0px));
   overflow-x: hidden;
   min-width: 0;
-  max-width: var(--content-max);
   animation: pageEnter var(--transition-slow) var(--ease-expo);
 }
 
@@ -1114,14 +1116,18 @@ a:focus-visible {
   border-radius: var(--radius-md);
 }
 
-/* Charts */
+/* Charts — explicit heights required for Recharts ResponsiveContainer */
 .chart-wrap {
-  height: 280px;
-  padding: var(--space-2) 0;
+  height: var(--chart-height);
 }
 
 .chart-wrap--tall {
-  height: 320px;
+  height: var(--chart-height-tall);
+}
+
+.chart-panel {
+  width: 100%;
+  height: 100%;
 }
 
 /* Logs */

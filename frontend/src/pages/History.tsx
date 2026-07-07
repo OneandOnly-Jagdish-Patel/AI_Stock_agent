@@ -6,13 +6,12 @@ import {
   Bar,
   BarChart,
   Cell,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { api } from "../api/client";
-import { ChartPanel } from "../components/ChartPanel";
+import { ChartPanel, chartHeights } from "../components/ChartPanel";
 import { EmptyState } from "../components/EmptyState";
 import { HeroMetric } from "../components/HeroMetric";
 import { LoadingButton } from "../components/LoadingButton";
@@ -137,8 +136,8 @@ export function HistoryPage() {
               <ChartPanel
                 title="Equity curve"
                 summary={`Portfolio equity from ${fmtMoney(startEquity)} to ${fmtMoney(currentEquity)} across ${chartData.length} data points.`}
+                height={chartHeights.tall}
               >
-                <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="historyEquityGradient" x1="0" y1="0" x2="0" y2="1">
@@ -176,7 +175,6 @@ export function HistoryPage() {
                     activeDot={{ r: 4, fill: chartColors.positive }}
                   />
                 </AreaChart>
-              </ResponsiveContainer>
               </ChartPanel>
             </div>
           </div>
@@ -188,7 +186,6 @@ export function HistoryPage() {
                 title="Daily net P&L"
                 summary={`Daily profit and loss bars. Total cumulative P&L is ${fmtMoney(totalPnl)}.`}
               >
-                <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
                   <XAxis
                     dataKey="date"
@@ -217,7 +214,6 @@ export function HistoryPage() {
                     ))}
                   </Bar>
                 </BarChart>
-              </ResponsiveContainer>
               </ChartPanel>
             </div>
           </div>

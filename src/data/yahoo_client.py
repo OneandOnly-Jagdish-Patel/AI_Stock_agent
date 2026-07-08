@@ -117,13 +117,24 @@ def _flatten_download(data: pd.DataFrame, symbol: str) -> pd.DataFrame:
     df = data
     if isinstance(df.columns, pd.MultiIndex):
         level0 = df.columns.get_level_values(0)
+        level1 = df.columns.get_level_values(1) if df.columns.nlevels > 1 else pd.Index([])
+
         if symbol in level0:
+            # group_by="ticker" batch layout: (Ticker, Price)
             df = df[symbol]
-        elif "Close" in level0:
+        elif len(level1) and symbol in level1:
+            # Single-symbol layout: (Price, Ticker)
             df = df.copy()
+            df.columns = level0
+        elif any(field in level0 for field in ("Close", "Open", "High", "Low", "Volume")):
+            # Field names at level 0 — drop ticker level
+            df = df.copy()
+            df.columns = level0
         else:
-            first = level0[0]
-            df = df[first]
+            df = df[level0[0]]
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(-1)
 
     df = df.rename(columns={c: str(c).title() for c in df.columns})
     return df.dropna(how="all")

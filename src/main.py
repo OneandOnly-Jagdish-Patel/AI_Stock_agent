@@ -180,7 +180,7 @@ class TradingAgent:
 
         self.bar_manager.set_symbols(final_symbols)
         if added:
-            self.bar_manager.warmup(added)
+            await self.bar_manager.warmup_async(added)
 
         ScalperClass = SwingScalper if self._is_swing else SymbolScalper
         for symbol in added:
@@ -475,7 +475,7 @@ class TradingAgent:
         self._screener_ran_date = today_str
 
         self.bar_manager.set_symbols(self.active_symbols)
-        self.bar_manager.warmup(self.active_symbols)
+        await self.bar_manager.warmup_async(self.active_symbols)
 
         self._stream = MarketDataStream(self.config, self.active_symbols, on_bar=self._on_bar)
         self._trade_stream = OrderUpdateStream(self.config, on_update=self._on_order_update)

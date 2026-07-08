@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 
@@ -134,6 +135,15 @@ class BarManager:
                 state.prev_day_close,
                 source,
             )
+
+    async def warmup_async(self, symbols: list[str] | None = None) -> None:
+        """Run warmup in a worker thread so Alpaca/Yahoo I/O does not block the event loop."""
+        target = symbols or self.symbols
+        if not target:
+            return
+        logger.info("Starting async bar warmup for %d symbol(s)", len(target))
+        await asyncio.to_thread(self.warmup, target)
+        logger.info("Finished async bar warmup for %d symbol(s)", len(target))
 
     def on_bar(self, symbol: str, bar_data: dict) -> IndicatorState:
         bar = Bar(

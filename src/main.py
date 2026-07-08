@@ -21,6 +21,7 @@ from src.logging_sanitize import SensitiveDataFilter
 from src.data.bars import BarManager
 from src.data.stream import MarketDataStream
 from src.data.trade_stream import OrderUpdateStream
+from src.execution.hydration import held_symbols, hydrate_swing_positions
 from src.execution.orders import OrderExecutor
 from src.execution.positions import PositionManager
 from src.journal.logger import TradeJournal
@@ -161,6 +162,16 @@ class TradingAgent:
         value = getattr(state, "value", state)
         return str(value).lower() != "idle"
 
+    def _symbol_has_exposure(self, symbol: str) -> bool:
+        """True if the agent or Alpaca still has an open/working position."""
+        if self._scalper_active(self.scalpers.get(symbol)):
+            return True
+        return self.positions.get_position_qty(symbol) > 0
+
+    def _merge_held_symbols(self, symbols: list[str]) -> list[str]:
+        """Ensure Alpaca-held symbols stay on the watchlist and data stream."""
+        return list(dict.fromkeys([*symbols, *held_symbols(self.positions)]))
+
     async def _refresh_watchlist(self) -> None:
         """Re-run the screener mid-life and reconcile symbols, scalpers, and the stream."""
         if self._stream is None:
@@ -173,10 +184,12 @@ class TradingAgent:
 
         added = [s for s in new_symbols if s not in self.scalpers]
         removed = [s for s in prev_symbols if s not in new_symbols]
-        # Never drop a symbol that still has an open/working position.
-        dropped = [s for s in removed if not self._scalper_active(self.scalpers.get(s))]
+        # Never drop a symbol that still has an open/working position (agent or Alpaca).
+        dropped = [s for s in removed if not self._symbol_has_exposure(s)]
         holdouts = [s for s in removed if s not in dropped]
-        final_symbols = list(dict.fromkeys(new_symbols + holdouts))
+        final_symbols = self._merge_held_symbols(list(dict.fromkeys(new_symbols + holdouts)))
+        added = [s for s in final_symbols if s not in self.scalpers]
+        self.active_symbols = final_symbols
 
         self.bar_manager.set_symbols(final_symbols)
         if added:
@@ -205,6 +218,14 @@ class TradingAgent:
             self._stream.unsubscribe(dropped)
             for symbol in dropped:
                 self.scalpers.pop(symbol, None)
+
+        if self._is_swing:
+            await hydrate_swing_positions(
+                self.positions,
+                self.scalpers,
+                self.journal,
+                self.bar_manager,
+            )
 
         logger.info(
             "Daily watchlist refreshed: %s (added=%s, dropped=%s)",
@@ -474,6 +495,8 @@ class TradingAgent:
         await self._run_premarket_briefing()
         self._screener_ran_date = today_str
 
+        self.active_symbols = self._merge_held_symbols(self.active_symbols)
+
         self.bar_manager.set_symbols(self.active_symbols)
         await self.bar_manager.warmup_async(self.active_symbols)
 
@@ -492,6 +515,14 @@ class TradingAgent:
                 self.llm,
                 self._stream,
                 avoided_symbols=self.avoided_symbols,
+            )
+
+        if self._is_swing:
+            await hydrate_swing_positions(
+                self.positions,
+                self.scalpers,
+                self.journal,
+                self.bar_manager,
             )
 
         self._watchlist_task = asyncio.create_task(self._watchlist_loop())

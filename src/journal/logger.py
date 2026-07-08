@@ -254,6 +254,36 @@ class TradeJournal:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_open_lot(self, symbol: str) -> dict[str, Any] | None:
+        """Return metadata for the current open lot (most recent unmatched buy), if any."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM trades WHERE symbol = ? ORDER BY ts ASC",
+                (symbol.upper(),),
+            ).fetchall()
+
+        if not rows:
+            return None
+
+        open_qty = 0.0
+        lot_entry: dict[str, Any] | None = None
+        for row in rows:
+            qty = float(row["qty"])
+            if str(row["side"]).lower() == "buy":
+                if open_qty <= 0:
+                    lot_entry = dict(row)
+                open_qty += qty
+            else:
+                open_qty -= qty
+                if open_qty <= 0:
+                    lot_entry = None
+                    open_qty = 0.0
+
+        if open_qty > 0 and lot_entry is not None:
+            lot_entry["open_qty"] = open_qty
+            return lot_entry
+        return None
+
     def get_daily_summary(self, date: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM daily_pnl WHERE date = ?", (date,)).fetchone()

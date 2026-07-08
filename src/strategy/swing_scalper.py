@@ -331,6 +331,67 @@ class SwingScalper:
         """Call once at the start of each new trading day."""
         self.morning_reviewed_today = False
 
+    def hydrate_from_alpaca(
+        self,
+        *,
+        entry_price: float,
+        qty: float,
+        current_price: float,
+        entry_time: datetime | None = None,
+    ) -> None:
+        """Restore in-memory state from an Alpaca-held position after restart."""
+        if entry_time is not None and entry_time.tzinfo is None:
+            entry_time = entry_time.replace(tzinfo=timezone.utc)
+
+        self.state = SwingState.IN_POSITION
+        self.entry_price = entry_price
+        self.position_qty = qty
+        self.highest_since_entry = max(entry_price, current_price)
+        self.dynamic_stop_pct = self.swing.stop_loss_pct
+        self.entry_time = entry_time
+        self.entry_date = entry_time.astimezone(timezone.utc).date() if entry_time else None
+        self.morning_reviewed_today = False
+        self.risk.register_open(self.symbol)
+
+        logger.info(
+            "%s hydrated from Alpaca: qty=%s entry=%.2f current=%.2f pnl=%.2f%%",
+            self.symbol,
+            qty,
+            entry_price,
+            current_price,
+            self._pnl_pct(current_price),
+        )
+
+    async def check_hydration_exit(
+        self,
+        current_price: float,
+        indicator_state: IndicatorState | None = None,
+    ) -> bool:
+        """Evaluate stop rules immediately after hydration. Returns True if exit submitted."""
+        if self.state != SwingState.IN_POSITION:
+            return False
+
+        self.highest_since_entry = max(self.highest_since_entry, current_price)
+        rsi = indicator_state.rsi(14) if indicator_state is not None else None
+        exit_signal = evaluate_swing_exit(
+            self.entry_price,
+            current_price,
+            self.highest_since_entry,
+            self.dynamic_stop_pct,
+            self.swing,
+            rsi,
+        )
+
+        if exit_signal.signal_type == SignalType.SELL:
+            await self._exit(current_price, f"{exit_signal.reason}_hydration", market=True)
+            return True
+
+        if self._days_held() >= self.swing.max_hold_days:
+            await self._exit(current_price, "max_hold_days_hydration", market=True)
+            return True
+
+        return False
+
     async def _exit(self, price: float, reason: str, market: bool = True) -> None:
         self.journal.log_signal(self.symbol, "exit", reason)
         await self._submit_sell(price, reason, market=market)

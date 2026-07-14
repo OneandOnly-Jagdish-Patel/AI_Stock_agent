@@ -213,9 +213,9 @@ class TradingAgent:
             scalper.avoided_symbols = self.avoided_symbols
 
         if added:
-            self._stream.subscribe(added)
+            await self._stream.subscribe(added)
         if dropped:
-            self._stream.unsubscribe(dropped)
+            await self._stream.unsubscribe(dropped)
             for symbol in dropped:
                 self.scalpers.pop(symbol, None)
 

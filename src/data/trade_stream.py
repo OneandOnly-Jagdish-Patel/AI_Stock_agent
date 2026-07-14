@@ -55,7 +55,22 @@ class OrderUpdateStream:
             raise
 
     def stop(self) -> None:
+        """Stop without deadlocking when called on the stream's event loop."""
         try:
-            self._stream.stop()
+            stream = self._stream
+            loop = getattr(stream, "_loop", None)
+            if loop is not None and loop.is_running():
+                try:
+                    on_loop = asyncio.get_running_loop() is loop
+                except RuntimeError:
+                    on_loop = False
+                if on_loop:
+                    # TradingStream.stop() uses run_coroutine_threadsafe(...).result()
+                    stream._should_run = False
+                    stop_queue = getattr(stream, "_stop_stream_queue", None)
+                    if stop_queue is not None and stop_queue.empty():
+                        stop_queue.put_nowait({"should_stop": True})
+                    return
+            stream.stop()
         except Exception:
             logger.debug("Trading stream stop raised", exc_info=True)

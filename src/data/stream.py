@@ -7,7 +7,6 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from alpaca.data.enums import DataFeed
 from alpaca.data.live import StockDataStream
 
 from src.config import AppConfig
@@ -29,7 +28,7 @@ class MarketDataStream:
         on_quote: OnQuoteHandler | None = None,
     ) -> None:
         self.config = config
-        self.symbols = symbols
+        self.symbols = list(symbols)
         self.on_bar = on_bar
         self.on_quote = on_quote
         self._latest_quotes: dict[str, Quote] = {}
@@ -38,45 +37,88 @@ class MarketDataStream:
             secret_key=config.alpaca_secret_key,
             feed=_parse_feed(config.alpaca_data_feed),
         )
-        for symbol in symbols:
-            self._stream.subscribe_bars(self._handle_bar, symbol)
-            self._stream.subscribe_quotes(self._handle_quote, symbol)
+        # Register before _run_forever so the initial connect subscribe includes them.
+        # Do not call Alpaca subscribe_* after the stream is running — that SDK path
+        # uses run_coroutine_threadsafe(...).result() and deadlocks on this event loop.
+        for symbol in self.symbols:
+            self._register_handlers(symbol)
 
     def get_quote(self, symbol: str) -> Quote | None:
         return self._latest_quotes.get(symbol)
 
-    def subscribe(self, symbols: list[str]) -> None:
-        """Subscribe additional symbols to the live stream (safe while running)."""
+    def _register_handlers(self, symbol: str) -> None:
+        self._stream._ensure_coroutine(self._handle_bar)
+        self._stream._ensure_coroutine(self._handle_quote)
+        self._stream._handlers["bars"][symbol] = self._handle_bar
+        self._stream._handlers["quotes"][symbol] = self._handle_quote
+
+    def _drop_handlers(self, symbol: str) -> None:
+        self._stream._handlers["bars"].pop(symbol, None)
+        self._stream._handlers["quotes"].pop(symbol, None)
+
+    def _on_stream_loop(self) -> bool:
+        """True when called from the same running loop that owns the Alpaca stream."""
+        loop = getattr(self._stream, "_loop", None)
+        if loop is None or not loop.is_running():
+            return False
+        try:
+            return asyncio.get_running_loop() is loop
+        except RuntimeError:
+            return False
+
+    async def subscribe(self, symbols: list[str]) -> None:
+        """Subscribe additional symbols without blocking the event loop."""
         added: list[str] = []
         for symbol in symbols:
             if symbol in self.symbols:
                 continue
             try:
-                self._stream.subscribe_bars(self._handle_bar, symbol)
-                self._stream.subscribe_quotes(self._handle_quote, symbol)
+                self._register_handlers(symbol)
                 self.symbols.append(symbol)
                 added.append(symbol)
             except Exception:
                 logger.warning("Failed to subscribe %s to stream", symbol, exc_info=True)
-        if added:
-            logger.info("Subscribed new symbols to stream: %s", added)
 
-    def unsubscribe(self, symbols: list[str]) -> None:
-        """Unsubscribe symbols that are no longer traded (safe while running)."""
-        removed: list[str] = []
-        for symbol in symbols:
-            if symbol not in self.symbols:
-                continue
+        if not added:
+            return
+
+        # Before connect, handlers alone are enough — _run_forever sends subscribe.
+        if getattr(self._stream, "_running", False):
             try:
-                self._stream.unsubscribe_bars(symbol)
-                self._stream.unsubscribe_quotes(symbol)
+                await self._stream._send_subscribe_msg()
+            except Exception:
+                logger.warning(
+                    "Failed to push live subscribe for %s",
+                    added,
+                    exc_info=True,
+                )
+                return
+
+        logger.info("Subscribed new symbols to stream: %s", added)
+
+    async def unsubscribe(self, symbols: list[str]) -> None:
+        """Unsubscribe symbols without blocking the event loop."""
+        removed = [symbol for symbol in symbols if symbol in self.symbols]
+        if not removed:
+            return
+
+        try:
+            if getattr(self._stream, "_running", False):
+                await self._stream._send_unsubscribe_msg("bars", removed)
+                await self._stream._send_unsubscribe_msg("quotes", removed)
+            for symbol in removed:
+                self._drop_handlers(symbol)
                 self.symbols.remove(symbol)
                 self._latest_quotes.pop(symbol, None)
-                removed.append(symbol)
-            except Exception:
-                logger.debug("Failed to unsubscribe %s from stream", symbol, exc_info=True)
-        if removed:
-            logger.info("Unsubscribed symbols from stream: %s", removed)
+        except Exception:
+            logger.debug(
+                "Failed to unsubscribe %s from stream",
+                removed,
+                exc_info=True,
+            )
+            return
+
+        logger.info("Unsubscribed symbols from stream: %s", removed)
 
     async def _handle_bar(self, bar: Any) -> None:
         symbol = bar.symbol
@@ -110,7 +152,16 @@ class MarketDataStream:
             raise
 
     def stop(self) -> None:
+        """Stop the websocket without deadlocking when called on the stream loop."""
         try:
-            self._stream.stop()
+            stream = self._stream
+            if self._on_stream_loop():
+                # Alpaca's stop() uses run_coroutine_threadsafe(...).result(), which
+                # deadlocks when invoked from the stream's own event loop thread.
+                stream._should_run = False
+                if stream._stop_stream_queue.empty():
+                    stream._stop_stream_queue.put_nowait({"should_stop": True})
+                return
+            stream.stop()
         except Exception:
             logger.debug("Stream stop raised", exc_info=True)
